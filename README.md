@@ -16,4 +16,45 @@ MVP, küçük ve çalışan parçalar halinde geliştirilecektir. İlk hedef; ki
 
 ## Mevcut durum
 
-Proje başlangıç ve planlama aşamasındadır. Henüz backend, mobil uygulama, veritabanı, geliştirme ortamı veya herhangi bir bağımlılık kurulmamıştır. Kurulum ve uygulama adımları ayrı GitHub issue'ları ve küçük pull request'ler halinde ilerletilecektir.
+Proje başlangıç ve planlama aşamasındadır. Minimal ASP.NET Core backend iskeleti ve health-check endpoint'i oluşturulmuştur; ürün özellikleri, mobil uygulama ve veritabanı henüz geliştirilmemiştir. Kurulum ve uygulama adımları ayrı GitHub issue'ları ve küçük pull request'ler halinde ilerletilecektir.
+
+## Backend geliştirme
+
+### Gereksinim ve proje konumları
+
+Backend, .NET 10 (`net10.0`) hedefler. Aşağıdaki komutlar .NET SDK `10.0.401` ile doğrulanmıştır.
+
+- Solution: `backend/SmartKitchenAssistant.sln`
+- API projesi: `backend/src/SmartKitchenAssistant.Api/SmartKitchenAssistant.Api.csproj`
+- Test projesi: `backend/tests/SmartKitchenAssistant.Api.Tests/SmartKitchenAssistant.Api.Tests.csproj`
+
+### Restore, build ve test
+
+Aşağıdaki komutları depo kökünden çalıştırın:
+
+```powershell
+dotnet restore .\backend\SmartKitchenAssistant.sln
+dotnet build .\backend\SmartKitchenAssistant.sln --no-restore
+dotnet test .\backend\SmartKitchenAssistant.sln --no-build --no-restore
+```
+
+### API'yi çalıştırma
+
+Başarılı bir build işleminden sonra, depo kökünden API klasörüne geçip uygulamayı çalıştırın:
+
+```powershell
+Set-Location .\backend\src\SmartKitchenAssistant.Api
+dotnet run --no-build --urls http://127.0.0.1:5187
+```
+
+Bu HTTP adresi yalnızca yerel geliştirme ve doğrulama içindir. Üretim ortamında uygun HTTPS/TLS yapılandırması kullanılmalıdır.
+
+### Health check
+
+API çalışırken ayrı bir PowerShell terminalinden health-check endpoint'ine istek gönderin:
+
+```powershell
+Invoke-WebRequest -Uri 'http://127.0.0.1:5187/health' -Method Get
+```
+
+`GET /health`, sağlıklı durumda HTTP `200 OK` ve `Healthy` yanıtı döndürür. Uygulamayı durdurmak için API'nin çalıştığı terminalde `Ctrl+C` kullanın.
