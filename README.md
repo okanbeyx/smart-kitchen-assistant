@@ -18,6 +18,15 @@ MVP, küçük ve çalışan parçalar halinde geliştirilecektir. İlk hedef; ki
 
 Proje başlangıç ve planlama aşamasındadır. Minimal ASP.NET Core backend iskeleti ve health-check endpoint'i oluşturulmuştur; ürün özellikleri, mobil uygulama ve veritabanı henüz geliştirilmemiştir. Kurulum ve uygulama adımları ayrı GitHub issue'ları ve küçük pull request'ler halinde ilerletilecektir.
 
+## Dokümantasyon ve mimari
+
+- [MVP ürün brifi](docs/product-brief.md)
+- [Backend mimarisi](docs/backend-architecture.md)
+- [İlk domain ve veri modeli](docs/data-model.md)
+- [ADR 0001: Modular monolith](docs/adr/0001-use-modular-monolith.md)
+- [ADR 0002: Normalized quantity tek doğruluk kaynağı](docs/adr/0002-use-normalized-quantity-as-source-of-truth.md)
+- [ADR 0003: Transactional ve idempotent stok tüketimi](docs/adr/0003-require-transactional-idempotent-stock-consumption.md)
+
 ## Backend geliştirme
 
 ### Gereksinim ve proje konumları
