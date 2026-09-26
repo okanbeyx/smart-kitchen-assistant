@@ -1,13 +1,13 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace SmartKitchenAssistant.Api.Tests;
 
-public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection(TestWebApplicationFactoryCollection.Name)]
+public sealed class HealthEndpointTests
 {
     private readonly HttpClient _client;
 
-    public HealthEndpointTests(WebApplicationFactory<Program> factory)
+    public HealthEndpointTests(TestWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
     }
