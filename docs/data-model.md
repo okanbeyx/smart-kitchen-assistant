@@ -83,16 +83,16 @@ Kesin rounding modu henüz seçilmemiş açık karardır.
 | --- | --- | --- |
 | `Id` | Hayır | Kararlı kimlik; fiziksel tip implementation kararıdır. |
 | `Name` | Hayır | Kullanıcıya gösterilen ad. |
-| `NormalizedName` | Hayır | Arama ve tekillik için normalize edilmiş ad. |
 | `QuantityDimension` | Hayır | `Mass`, `Volume` veya `Count`. |
 | `IsActive` | Hayır | Yeni kullanım için aktiflik durumu. |
+
+`NormalizedName` mevcut core domain modelinin parçası değildir. Ingredient adı için canonical lookup key veya normalization stratejisi; Unicode normalization, casing, localization ve SQL collation kararları kesinleşmeden persist edilen zorunlu bir alan ya da unique constraint olarak kabul edilmez.
 
 **Sahiplik ve ilişkiler:** Catalog tarafından sahiplenilir. Bir Ingredient sıfır veya daha fazla RecipeIngredient ve UserPantryItem tarafından referanslanabilir.
 
 **DB-level constraint adayları:**
 
-- `NormalizedName` unique.
-- `Name` ve `NormalizedName` boş olamaz.
+- `Name` boş olamaz.
 - `QuantityDimension` desteklenen kapalı kümede olmalı.
 
 **Domain/Application kuralları:**
@@ -189,7 +189,6 @@ Kesin rounding modu henüz seçilmemiş açık karardır.
 | `IngredientId` | Hayır | Stoktaki Ingredient. |
 | `NormalizedQuantity` | Hayır | Ingredient boyutunun temel birimindeki tek otoritatif miktar. |
 | `DisplayUnit` | Hayır | Kullanıcının gösterim tercihi. |
-| Zaman damgaları | Hayır | Oluşturma/güncelleme bilgileri. |
 
 **Sahiplik ve ilişkiler:** Pantry tarafından ve mantıksal olarak `UserId` ile belirtilen kullanıcı tarafından sahiplenilir. Her satır bir Ingredient'a referans verir. Fiziksel User tablosu bu modelde varsayılmaz.
 
@@ -229,7 +228,6 @@ erDiagram
     INGREDIENT {
         identifier Id PK
         string Name
-        string NormalizedName UK
         enum QuantityDimension
         boolean IsActive
     }
@@ -399,6 +397,7 @@ Bu diyagram önerilen yönü gösterir; tablo ve kolonların kesin varlığını
 
 ### Açık kararlar
 
+- Ingredient name normalization ve canonical lookup key stratejisi; Unicode normalization, casing, localization ve SQL collation yaklaşımı EF/persistence PR'ından önce kesinleştirilmelidir.
 - Kesin rounding modu.
 - Fractional serving desteği ve porsiyon alanının fiziksel tipi.
 - “Değerlendirilemedi” sonucunun karma durum önceliği.
