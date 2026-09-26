@@ -49,7 +49,15 @@ dotnet test .\backend\SmartKitchenAssistant.sln --no-build --no-restore
 
 ### API'yi çalıştırma
 
-Başarılı bir build işleminden sonra, depo kökünden API klasörüne geçip uygulamayı çalıştırın:
+API başlangıçta `ConnectionStrings:SmartKitchen` yapılandırmasını zorunlu olarak doğrular. Yerel SQL Server bağlantı dizesini kaynak koda veya sürüm kontrolüne eklemek yerine .NET User Secrets ile ayarlayın:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:SmartKitchen" "<your-local-sql-server-connection-string>" --project .\backend\src\SmartKitchenAssistant.Api
+```
+
+Ortam değişkeni kullanan ortamlarda aynı ayar `ConnectionStrings__SmartKitchen` anahtarıyla verilebilir. Yukarıdaki değer güvenli bir yer tutucudur; gerçek parola veya bağlantı dizesi repoya eklenmemelidir.
+
+Başarılı bir build ve yerel yapılandırma işleminden sonra, depo kökünden API klasörüne geçip uygulamayı çalıştırın:
 
 ```powershell
 Set-Location .\backend\src\SmartKitchenAssistant.Api
