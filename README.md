@@ -26,6 +26,7 @@ Proje başlangıç ve planlama aşamasındadır. Minimal ASP.NET Core backend is
 - [ADR 0001: Modular monolith](docs/adr/0001-use-modular-monolith.md)
 - [ADR 0002: Normalized quantity tek doğruluk kaynağı](docs/adr/0002-use-normalized-quantity-as-source-of-truth.md)
 - [ADR 0003: Transactional ve idempotent stok tüketimi](docs/adr/0003-require-transactional-idempotent-stock-consumption.md)
+- [ADR 0004: JWT bearer authentication sınırı](docs/adr/0004-use-jwt-bearer-authentication-boundary.md)
 
 ## Backend geliştirme
 
@@ -67,6 +68,8 @@ dotnet user-secrets set "ConnectionStrings:SmartKitchen" "<your-local-sql-server
 ```
 
 Ortam değişkeni kullanan ortamlarda aynı ayar `ConnectionStrings__SmartKitchen` anahtarıyla verilebilir. Yukarıdaki değer güvenli bir yer tutucudur; gerçek parola veya bağlantı dizesi repoya eklenmemelidir.
+
+API, korumalı endpoint'ler için bir HTTPS JWT issuer ve API audience yapılandırması ister. Gerçek ortam değerlerini kaynak koda eklemek yerine User Secrets veya deployment environment üzerinden `Authentication:Jwt:Authority` ve `Authentication:Jwt:Audience` anahtarlarıyla sağlayın. Ortam değişkeni karşılıkları `Authentication__Jwt__Authority` ve `Authentication__Jwt__Audience` şeklindedir. API access token üretmez ve JWT doğrulaması için client secret veya signing key saklamaz.
 
 Başarılı bir build ve yerel yapılandırma işleminden sonra, depo kökünden API klasörüne geçip uygulamayı çalıştırın:
 
