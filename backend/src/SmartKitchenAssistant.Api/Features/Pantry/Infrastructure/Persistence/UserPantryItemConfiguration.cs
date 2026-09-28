@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmartKitchenAssistant.Api.Features.Catalog.Domain;
 using SmartKitchenAssistant.Api.Features.Pantry.Domain;
+using SmartKitchenAssistant.Api.Infrastructure.Persistence.ValueConverters;
 
 namespace SmartKitchenAssistant.Api.Features.Pantry.Infrastructure.Persistence;
 
@@ -26,7 +27,9 @@ internal sealed class UserPantryItemConfiguration : IEntityTypeConfiguration<Use
             .UseIdentityColumn();
 
         builder.Property(pantryItem => pantryItem.UserId)
-            .HasMaxLength(256)
+            .HasConversion<Utf16LittleEndianStringToBytesConverter>()
+            .HasColumnType("varbinary(512)")
+            .HasMaxLength(Utf16LittleEndianStringToBytesConverter.MaximumByteLength)
             .IsRequired();
 
         builder.Property(pantryItem => pantryItem.NormalizedQuantity)

@@ -4,6 +4,8 @@ namespace SmartKitchenAssistant.Api.Features.Pantry.Domain;
 
 public sealed class UserPantryItem
 {
+    public const int MaximumUserIdLength = 256;
+
     public UserPantryItem(
         string userId,
         long ingredientId,
@@ -13,6 +15,21 @@ public sealed class UserPantryItem
         if (string.IsNullOrWhiteSpace(userId))
         {
             throw new ArgumentException("User identifier cannot be empty.", nameof(userId));
+        }
+
+        if (userId.Length > MaximumUserIdLength)
+        {
+            throw new ArgumentException(
+                $"User identifier cannot exceed {MaximumUserIdLength} UTF-16 code units.",
+                nameof(userId));
+        }
+
+        if (ingredientId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ingredientId),
+                ingredientId,
+                "Ingredient identifier must be greater than zero.");
         }
 
         if (normalizedQuantity <= 0m)
