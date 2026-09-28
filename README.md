@@ -47,6 +47,17 @@ dotnet build .\backend\SmartKitchenAssistant.sln --no-restore
 dotnet test .\backend\SmartKitchenAssistant.sln --no-build --no-restore
 ```
 
+### EF Core migration araçları
+
+Repo, EF Core komut satırı aracını `.config/dotnet-tools.json` manifestinde `10.0.12` sürümüne sabitler. Yeni bir clone sonrasında aracı yüklemek ve sürümünü doğrulamak için depo kökünden şu komutları çalıştırın:
+
+```powershell
+dotnet tool restore
+dotnet ef --version
+```
+
+Migration komutlarında repo-local araç kullanılmalıdır. Gerçek bağlantı dizeleri ve diğer gizli değerler kaynak koda ya da sürüm kontrolüne eklenmemelidir.
+
 ### API'yi çalıştırma
 
 API başlangıçta `ConnectionStrings:SmartKitchen` yapılandırmasını zorunlu olarak doğrular. Yerel SQL Server bağlantı dizesini kaynak koda veya sürüm kontrolüne eklemek yerine .NET User Secrets ile ayarlayın:
