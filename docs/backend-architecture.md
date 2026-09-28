@@ -4,7 +4,7 @@
 
 Bu belge, Smart Kitchen Assistant backend'i için Issue #7 kapsamında kabul edilen mimari sınırları tanımlar. Amaç; MVP'nin kiler, tarif uygunluğu ve onaylı stok tüketimi davranışlarını tek deploy edilen, anlaşılır ve büyütülebilir bir yapı içinde geliştirmektir.
 
-Bu belge bir implementation değildir. EF Core kurulumu, SQL Server migration'ları, authentication, endpoint'ler ve fiziksel proje ayrımları sonraki issue'ların kapsamındadır.
+Bu belge bir implementation değildir. EF Core, SQL Server ve authentication kararlarının uygulama ayrıntıları ilgili ADR ve issue'larda ele alınır; endpoint'ler ile fiziksel proje ayrımları sonraki issue'ların kapsamındadır.
 
 ## Mimari karar: modüler monolit
 
@@ -62,11 +62,13 @@ Pantry, kullanıcıya ait stok verisinin ve stok mutasyonlarının sahibidir.
 
 ### Identity/Auth
 
-Identity/Auth MVP için gerekli bir sistem sınırıdır; ancak Issue #7'de ayrı bir domain modeli veya authentication implementation'ı değildir.
+Identity/Auth MVP için gerekli bir sistem sınırıdır; ayrı bir domain modeli veya yerel kullanıcı veritabanı değildir.
 
-- API, doğrulanmış kimliği bir current-user sözleşmesi üzerinden Application katmanına aktaracaktır.
+- API, tek güvenilir issuer tarafından üretilen JWT bearer access token'larını doğrular.
+- API, doğrulanmış raw `sub` claim'ini provider bağımsız bir current-user sözleşmesi üzerinden Application katmanına aktarır.
 - Route veya request body içindeki `UserId` güvenilir kimlik kaynağı değildir.
-- Yerel kullanıcı tablosu, harici sağlayıcı ve session/token stratejisi henüz kararlaştırılmamıştır.
+- API token üretmez; login ve token issuance sorumluluğu ileride seçilecek OIDC/OAuth identity provider'a aittir.
+- Yerel kullanıcı tablosu ve User FK bulunmaz; harici sağlayıcı seçimi henüz kararlaştırılmamıştır.
 - Auth sağlayıcısına özgü ayrıntılar Domain katmanına taşınmamalıdır.
 
 ### Cooking
@@ -172,7 +174,8 @@ Modüller arası etkileşimlerde:
 
 ### Açık kararlar
 
-- Authentication/session sağlayıcısı ve kullanıcı kimliği stratejisi.
+- OIDC/OAuth identity provider seçimi ve React Native login akışı.
+- Birden fazla issuer gerekirse canonical kullanıcı kimliği stratejisi.
 - Cooking state'inin client-side, server-side veya hibrit tutulması.
 - Gelecekteki ML öneri motorunun kesin sorumluluk sınırı.
 - Stok partileri ve son tüketim tarihi modelinin hangi sürümde ekleneceği.
@@ -191,3 +194,4 @@ Modüller arası etkileşimlerde:
 - [ADR 0001: Modular monolith](adr/0001-use-modular-monolith.md)
 - [ADR 0002: Normalized quantity](adr/0002-use-normalized-quantity-as-source-of-truth.md)
 - [ADR 0003: Transactional ve idempotent stok tüketimi](adr/0003-require-transactional-idempotent-stock-consumption.md)
+- [ADR 0004: JWT bearer authentication sınırı](adr/0004-use-jwt-bearer-authentication-boundary.md)

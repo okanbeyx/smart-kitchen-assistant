@@ -1,7 +1,7 @@
 namespace SmartKitchenAssistant.Api.Tests;
 
 // The factory sets process-wide configuration before Program runs, so tests using it
-// must not overlap other collections that could observe the temporary environment value.
+// must not overlap other collections that could observe the temporary environment values.
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class TestWebApplicationFactoryCollection
     : ICollectionFixture<TestWebApplicationFactory>
