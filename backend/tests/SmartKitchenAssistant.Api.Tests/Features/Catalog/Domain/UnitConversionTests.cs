@@ -101,4 +101,11 @@ public sealed class UnitConversionTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => Unit.Kilogram.ConvertFromBase(quantity));
     }
+
+    [Fact]
+    public void NormalizeToBaseRejectsDecimalOverflow()
+    {
+        Assert.Throws<OverflowException>(() =>
+            Unit.Kilogram.NormalizeToBase(decimal.MaxValue));
+    }
 }

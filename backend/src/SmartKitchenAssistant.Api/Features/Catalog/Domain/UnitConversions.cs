@@ -38,7 +38,7 @@ public static class UnitConversions
     public static decimal NormalizeToBase(this Unit unit, decimal quantity)
     {
         EnsurePositive(quantity);
-        return quantity * unit.GetBaseUnitConversionFactor();
+        return checked(quantity * unit.GetBaseUnitConversionFactor());
     }
 
     public static decimal ConvertFromBase(this Unit unit, decimal normalizedQuantity)

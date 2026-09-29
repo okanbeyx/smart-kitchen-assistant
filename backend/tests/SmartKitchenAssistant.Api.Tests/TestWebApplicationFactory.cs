@@ -2,48 +2,51 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using SmartKitchenAssistant.Api.Infrastructure.Persistence;
 
 namespace SmartKitchenAssistant.Api.Tests;
 
 public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private const string ConnectionStringEnvironmentVariable =
-        "ConnectionStrings__SmartKitchen";
-    private const string AuthorityEnvironmentVariable =
-        "Authentication__Jwt__Authority";
-    private const string AudienceEnvironmentVariable =
-        "Authentication__Jwt__Audience";
-
-    private readonly string? _previousConnectionString;
-    private readonly string? _previousAuthority;
-    private readonly string? _previousAudience;
+    private readonly string _connectionString;
+    private readonly DbCommandInterceptor? _commandInterceptor;
 
     public TestWebApplicationFactory()
-    {
-        _previousConnectionString = Environment.GetEnvironmentVariable(
-            ConnectionStringEnvironmentVariable);
-        _previousAuthority = Environment.GetEnvironmentVariable(
-            AuthorityEnvironmentVariable);
-        _previousAudience = Environment.GetEnvironmentVariable(
-            AudienceEnvironmentVariable);
-
-        Environment.SetEnvironmentVariable(
-            ConnectionStringEnvironmentVariable,
+        : this(
             "Server=localhost;Database=SmartKitchenAssistantTests;" +
-            "Integrated Security=True;TrustServerCertificate=True;");
-        Environment.SetEnvironmentVariable(
-            AuthorityEnvironmentVariable,
-            "https://issuer.example.test");
-        Environment.SetEnvironmentVariable(
-            AudienceEnvironmentVariable,
-            "smart-kitchen-assistant-tests");
+            "Integrated Security=True;TrustServerCertificate=True;")
+    {
+    }
+
+    internal TestWebApplicationFactory(
+        string connectionString,
+        DbCommandInterceptor? commandInterceptor = null)
+    {
+        _connectionString = connectionString;
+        _commandInterceptor = commandInterceptor;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("ConnectionStrings:SmartKitchen", _connectionString);
+        builder.UseSetting(
+            "Authentication:Jwt:Authority",
+            "https://issuer.example.test");
+        builder.UseSetting(
+            "Authentication:Jwt:Audience",
+            "smart-kitchen-assistant-tests");
+
         builder.ConfigureTestServices(services =>
         {
+            if (_commandInterceptor is not null)
+            {
+                services.AddDbContext<SmartKitchenDbContext>(options =>
+                    options.AddInterceptors(_commandInterceptor));
+            }
+
             services.AddAuthentication(options =>
                 {
                     options.DefaultAuthenticateScheme =
@@ -59,23 +62,4 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
         });
     }
 
-    protected override void Dispose(bool disposing)
-    {
-        try
-        {
-            base.Dispose(disposing);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(
-                ConnectionStringEnvironmentVariable,
-                _previousConnectionString);
-            Environment.SetEnvironmentVariable(
-                AuthorityEnvironmentVariable,
-                _previousAuthority);
-            Environment.SetEnvironmentVariable(
-                AudienceEnvironmentVariable,
-                _previousAudience);
-        }
-    }
 }

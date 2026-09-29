@@ -63,4 +63,26 @@ public sealed class UserPantryItem
     public decimal NormalizedQuantity { get; private set; }
 
     public Unit DisplayUnit { get; private set; }
+
+    public void UpdateQuantity(decimal normalizedQuantity, Unit displayUnit)
+    {
+        if (normalizedQuantity <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(normalizedQuantity),
+                normalizedQuantity,
+                "Normalized quantity must be greater than zero.");
+        }
+
+        if (!Enum.IsDefined(displayUnit))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(displayUnit),
+                displayUnit,
+                "Unsupported display unit.");
+        }
+
+        NormalizedQuantity = normalizedQuantity;
+        DisplayUnit = displayUnit;
+    }
 }

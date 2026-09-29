@@ -8,6 +8,9 @@ namespace SmartKitchenAssistant.Api.Features.Pantry.Infrastructure.Persistence;
 
 internal sealed class UserPantryItemConfiguration : IEntityTypeConfiguration<UserPantryItem>
 {
+    internal const string UserIngredientUniqueIndexName =
+        "IX_UserPantryItems_UserId_IngredientId";
+
     public void Configure(EntityTypeBuilder<UserPantryItem> builder)
     {
         builder.ToTable("UserPantryItems", "pantry", tableBuilder =>
@@ -46,6 +49,7 @@ internal sealed class UserPantryItemConfiguration : IEntityTypeConfiguration<Use
                 pantryItem.UserId,
                 pantryItem.IngredientId
             })
+            .HasDatabaseName(UserIngredientUniqueIndexName)
             .IsUnique();
 
         builder.HasOne<Ingredient>()
