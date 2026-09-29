@@ -1,7 +1,7 @@
 namespace SmartKitchenAssistant.Api.Tests;
 
-// The factory sets process-wide configuration before Program runs, so tests using it
-// must not overlap other collections that could observe the temporary environment values.
+// Keep tests that share the same WebApplicationFactory instance serialized so mutable
+// in-memory host state cannot leak between requests.
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class TestWebApplicationFactoryCollection
     : ICollectionFixture<TestWebApplicationFactory>

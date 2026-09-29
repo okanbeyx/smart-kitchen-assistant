@@ -69,4 +69,37 @@ public sealed class UserPantryItemTests
         Assert.Equal(1000m, item.NormalizedQuantity);
         Assert.Equal(Unit.Kilogram, item.DisplayUnit);
     }
+
+    [Fact]
+    public void UpdateQuantityChangesOnlyQuantityAndDisplayUnit()
+    {
+        var item = new UserPantryItem("user-1", 17, 1000m, Unit.Gram);
+
+        item.UpdateQuantity(2m, Unit.Kilogram);
+
+        Assert.Equal("user-1", item.UserId);
+        Assert.Equal(17, item.IngredientId);
+        Assert.Equal(2m, item.NormalizedQuantity);
+        Assert.Equal(Unit.Kilogram, item.DisplayUnit);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void UpdateQuantityRejectsNonPositiveQuantity(int quantity)
+    {
+        var item = new UserPantryItem("user-1", 1, 1m, Unit.Gram);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            item.UpdateQuantity(quantity, Unit.Gram));
+    }
+
+    [Fact]
+    public void UpdateQuantityRejectsUnknownDisplayUnit()
+    {
+        var item = new UserPantryItem("user-1", 1, 1m, Unit.Gram);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            item.UpdateQuantity(1m, (Unit)999));
+    }
 }
