@@ -203,6 +203,12 @@ Kesin rounding modu henüz seçilmemiş açık karardır.
 
 - `DisplayUnit.Dimension`, Ingredient.QuantityDimension ile eşleşmeli.
 - UserId route veya body'den alınmaz; doğrulanmış kullanıcı context'inden gelir.
+- UserId, Domain ve Application katmanlarında en fazla 256 UTF-16 code unit içeren
+  opaque C# `string` değeridir. Case, whitespace ve Unicode representation korunur;
+  trim veya normalization yapılmaz.
+- SQL Server'da exact karşılaştırma ve unique-index davranışı için UserId açık
+  UTF-16 little-endian dönüşümüyle `varbinary(512)` olarak saklanır. Bu fiziksel
+  temsil Domain/Application sözleşmesini değiştirmez.
 - Okuma ve yazma sorguları kullanıcı kapsamında çalışır:
 
 ```text

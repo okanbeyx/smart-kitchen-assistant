@@ -15,6 +15,34 @@ public sealed class UserPantryItemTests
             new UserPantryItem(userId!, 1, 1000m, Unit.Gram));
     }
 
+    [Fact]
+    public void ConstructorRejectsUserIdentifierLongerThanStorageContract()
+    {
+        var userId = new string('a', UserPantryItem.MaximumUserIdLength + 1);
+
+        Assert.Throws<ArgumentException>(() =>
+            new UserPantryItem(userId, 1, 1000m, Unit.Gram));
+    }
+
+    [Fact]
+    public void ConstructorAcceptsUserIdentifierAtStorageContractLimit()
+    {
+        var userId = new string('ü', UserPantryItem.MaximumUserIdLength);
+
+        var item = new UserPantryItem(userId, 1, 1000m, Unit.Gram);
+
+        Assert.Equal(userId, item.UserId);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void ConstructorRejectsNonPositiveIngredientIdentifier(long ingredientId)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new UserPantryItem("user-1", ingredientId, 1000m, Unit.Gram));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

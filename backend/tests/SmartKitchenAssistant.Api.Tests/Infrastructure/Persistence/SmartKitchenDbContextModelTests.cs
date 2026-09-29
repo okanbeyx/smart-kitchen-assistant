@@ -124,7 +124,18 @@ public sealed class SmartKitchenDbContextModelTests
         AssertPrimaryKeyGeneratedOnAdd(entity, nameof(UserPantryItem.Id));
         var userId = entity.FindProperty(nameof(UserPantryItem.UserId))!;
         Assert.False(userId.IsNullable);
-        Assert.Equal(256, userId.GetMaxLength());
+        var converter = userId.GetTypeMapping().Converter;
+        Assert.NotNull(converter);
+        Assert.Equal(typeof(byte[]), converter.ProviderClrType);
+        Assert.Equal(512, userId.GetMaxLength());
+        Assert.Equal("varbinary(512)", userId.GetColumnType());
+
+        const string exactValue = " Aü\ud800 ";
+        var providerValue = Assert.IsType<byte[]>(converter.ConvertToProvider(exactValue));
+        Assert.Equal(
+            [0x20, 0x00, 0x41, 0x00, 0xFC, 0x00, 0x00, 0xD8, 0x20, 0x00],
+            providerValue);
+        Assert.Equal(exactValue, converter.ConvertFromProvider(providerValue));
         AssertDecimalProperty(
             entity,
             nameof(UserPantryItem.NormalizedQuantity),
