@@ -2,6 +2,9 @@ using Microsoft.AspNetCore.Routing;
 using SmartKitchenAssistant.Api.Features.Pantry.Api;
 using SmartKitchenAssistant.Api.Features.Pantry.Application;
 using SmartKitchenAssistant.Api.Features.Pantry.Infrastructure.Persistence;
+using SmartKitchenAssistant.Api.Features.Recipes.Api;
+using SmartKitchenAssistant.Api.Features.Recipes.Application;
+using SmartKitchenAssistant.Api.Features.Recipes.Infrastructure.Persistence;
 using SmartKitchenAssistant.Api.Infrastructure.Authentication;
 using SmartKitchenAssistant.Api.Infrastructure.Http;
 using SmartKitchenAssistant.Api.Infrastructure.Persistence;
@@ -11,6 +14,8 @@ builder.Services.AddApiAuthentication(builder.Configuration);
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddScoped<IPantryRepository, PantryRepository>();
 builder.Services.AddScoped<PantryService>();
+builder.Services.AddScoped<IRecipeReadRepository, RecipeReadRepository>();
+builder.Services.AddScoped<RecipeReadService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.Configure<RouteHandlerOptions>(options =>
@@ -26,6 +31,7 @@ app.UseAuthorization();
 app.MapGet("/", () => "Hello World!");
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapPantryEndpoints();
+app.MapRecipeEndpoints();
 
 app.Run();
 
