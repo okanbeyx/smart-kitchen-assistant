@@ -19,6 +19,8 @@ builder.Services.AddScoped<IIngredientReadRepository, IngredientReadRepository>(
 builder.Services.AddScoped<IngredientReadService>();
 builder.Services.AddScoped<IPantryRepository, PantryRepository>();
 builder.Services.AddScoped<PantryService>();
+builder.Services.AddScoped<IPantryConsumptionRepository, PantryConsumptionRepository>();
+builder.Services.AddScoped<PantryConsumptionService>();
 builder.Services.AddScoped<IRecipeReadRepository, RecipeReadRepository>();
 builder.Services.AddScoped<RecipeReadService>();
 builder.Services.AddScoped<IRecipeSuitabilityRepository, RecipeSuitabilityRepository>();
@@ -40,6 +42,7 @@ app.MapGet("/", () => "Hello World!");
 app.MapHealthChecks("/health").AllowAnonymous();
 app.MapIngredientEndpoints();
 app.MapPantryEndpoints();
+app.MapPantryConsumptionEndpoints();
 app.MapRecipeEndpoints();
 
 app.Run();

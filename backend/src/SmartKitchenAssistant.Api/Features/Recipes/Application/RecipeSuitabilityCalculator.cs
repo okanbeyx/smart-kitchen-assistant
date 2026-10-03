@@ -42,7 +42,7 @@ internal sealed class RecipeSuitabilityCalculator
         {
             var first = group.Items[0];
 
-            if (!TryGetQuantifiedRequirement(
+            if (!TryGetRequiredQuantifiedRequirement(
                     group.Items,
                     out var requiredQuantity,
                     out var reasonCode))
@@ -129,7 +129,7 @@ internal sealed class RecipeSuitabilityCalculator
 
             if (quantityMode == OptionalQuantityMode.Quantified)
             {
-                if (!TryGetQuantifiedRequirement(
+                if (!TryGetOptionalQuantifiedRequirement(
                         group.Items,
                         out var quantity,
                         out var reasonCode))
@@ -271,7 +271,47 @@ internal sealed class RecipeSuitabilityCalculator
             .OrderBy(group => group.Items[0].Sequence)
             .ToArray();
 
-    private static bool TryGetQuantifiedRequirement(
+    private static bool TryGetRequiredQuantifiedRequirement(
+        IReadOnlyList<RecipeSuitabilityIngredientData> items,
+        out decimal totalQuantity,
+        out string? reasonCode)
+    {
+        var sources = items
+            .Select(item => new RequiredIngredientSource(
+                item.IngredientId,
+                item.QuantityDimension,
+                item.NormalizedQuantity,
+                item.DisplayUnit))
+            .ToArray();
+
+        if (RequiredIngredientAggregator.TryAggregate(
+                sources,
+                out var requirement,
+                out var error))
+        {
+            totalQuantity = requirement.NormalizedQuantity;
+            reasonCode = null;
+            return true;
+        }
+
+        totalQuantity = 0m;
+        reasonCode = error switch
+        {
+            RequiredIngredientValidationError.MissingQuantity =>
+                SuitabilityReasonCodes.MissingRequiredQuantity,
+            RequiredIngredientValidationError.InvalidQuantity =>
+                SuitabilityReasonCodes.InvalidQuantity,
+            RequiredIngredientValidationError.QuantityDimensionMismatch =>
+                SuitabilityReasonCodes.QuantityDimensionMismatch,
+            RequiredIngredientValidationError.QuantityOverflow =>
+                SuitabilityReasonCodes.QuantityOverflow,
+            _ => throw new InvalidOperationException(
+                "Required ingredient validation did not provide an error.")
+        };
+        return false;
+    }
+
+    private static bool TryGetOptionalQuantifiedRequirement(
         IReadOnlyList<RecipeSuitabilityIngredientData> items,
         out decimal totalQuantity,
         out string? reasonCode)

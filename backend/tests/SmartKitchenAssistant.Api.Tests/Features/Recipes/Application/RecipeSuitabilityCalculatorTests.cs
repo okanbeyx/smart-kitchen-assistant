@@ -222,6 +222,23 @@ public sealed class RecipeSuitabilityCalculatorTests
     }
 
     [Fact]
+    public void OptionalAggregateBeyondSqlRangeRetainsIssue22Semantics()
+    {
+        var first = Optional(2, 999_999_999_999.999999m) with { Sequence = 2 };
+        var second = Optional(2, 0.000001m) with { Sequence = 3 };
+
+        var result = Calculate(
+            [Required(1, 10m), first, second],
+            [Pantry(1, 10m)]);
+
+        Assert.Equal(RecipeSuitabilityClassification.Cookable, result.Classification);
+        var issue = Assert.Single(result.OptionalIssues);
+        Assert.Equal(OptionalIngredientIssueKind.Missing, issue.Kind);
+        Assert.Equal(1_000_000_000_000m, issue.RequiredNormalizedQuantity);
+        Assert.Null(issue.ReasonCode);
+    }
+
+    [Fact]
     public void RequiredAllocationIsRemovedBeforeEvaluatingOptionalQuantity()
     {
         var result = Calculate(

@@ -159,14 +159,66 @@ public sealed class SmartKitchenDbContextModelTests
     }
 
     [Fact]
+    public void StockConsumptionMappingMatchesPersistenceContract()
+    {
+        var entity = GetEntity<StockConsumption>("StockConsumptions", "pantry");
+
+        AssertPrimaryKeyGeneratedOnAdd(entity, nameof(StockConsumption.Id));
+        Assert.Equal(
+            "varbinary(512)",
+            entity.FindProperty(nameof(StockConsumption.UserId))!.GetColumnType());
+        Assert.Equal(
+            "varbinary(128)",
+            entity.FindProperty(nameof(StockConsumption.IdempotencyKey))!.GetColumnType());
+        AssertUniqueIndex(
+            entity,
+            nameof(StockConsumption.UserId),
+            nameof(StockConsumption.IdempotencyKey));
+        AssertForeignKey<Recipe>(
+            entity,
+            nameof(StockConsumption.RecipeId),
+            DeleteBehavior.NoAction);
+    }
+
+    [Fact]
+    public void StockConsumptionItemMappingMatchesPersistenceContract()
+    {
+        var entity = GetEntity<StockConsumptionItem>(
+            "StockConsumptionItems",
+            "pantry");
+        var primaryKey = entity.FindPrimaryKey();
+
+        Assert.NotNull(primaryKey);
+        Assert.Equal(
+            [nameof(StockConsumptionItem.StockConsumptionId),
+                nameof(StockConsumptionItem.IngredientId)],
+            primaryKey.Properties.Select(property => property.Name));
+        AssertDecimalProperty(
+            entity,
+            nameof(StockConsumptionItem.ConsumedNormalizedQuantity),
+            isNullable: false);
+        AssertEnumStringProperty<QuantityDimension>(
+            entity,
+            nameof(StockConsumptionItem.QuantityDimension),
+            isNullable: false);
+        AssertForeignKey<StockConsumption>(
+            entity,
+            nameof(StockConsumptionItem.StockConsumptionId),
+            DeleteBehavior.Cascade);
+        AssertForeignKey<Ingredient>(
+            entity,
+            nameof(StockConsumptionItem.IngredientId),
+            DeleteBehavior.NoAction);
+        AssertCheckConstraints(
+            entity,
+            "CK_StockConsumptionItems_ConsumedNormalizedQuantity_Positive",
+            "CK_StockConsumptionItems_QuantityDimension");
+    }
+
+    [Fact]
     public void ModelDoesNotContainDeferredOrValueObjectEntities()
     {
         Assert.Null(_model.FindEntityType(typeof(Unit)));
-        Assert.DoesNotContain(
-            _model.GetEntityTypes(),
-            entity => entity.ClrType.Name.Contains(
-                "StockConsumption",
-                StringComparison.Ordinal));
         Assert.All(
             _model.GetEntityTypes().SelectMany(entity => entity.GetProperties()),
             property => Assert.False(property.IsConcurrencyToken));
