@@ -16,7 +16,7 @@ MVP, küçük ve çalışan parçalar halinde geliştirilecektir. İlk hedef; ki
 
 ## Mevcut durum
 
-Proje başlangıç ve planlama aşamasındadır. Minimal ASP.NET Core backend iskeleti ve health-check endpoint'i oluşturulmuştur; ürün özellikleri, mobil uygulama ve veritabanı henüz geliştirilmemiştir. Kurulum ve uygulama adımları ayrı GitHub issue'ları ve küçük pull request'ler halinde ilerletilecektir.
+Repository, ASP.NET Core backend ile Expo/React Native mobil uygulama foundation'ını içerir. Ürün özellikleri ayrı GitHub issue'ları ve küçük pull request'ler halinde geliştirilmektedir.
 
 ## Dokümantasyon ve mimari
 
@@ -27,6 +27,12 @@ Proje başlangıç ve planlama aşamasındadır. Minimal ASP.NET Core backend is
 - [ADR 0002: Normalized quantity tek doğruluk kaynağı](docs/adr/0002-use-normalized-quantity-as-source-of-truth.md)
 - [ADR 0003: Transactional ve idempotent stok tüketimi](docs/adr/0003-require-transactional-idempotent-stock-consumption.md)
 - [ADR 0004: JWT bearer authentication sınırı](docs/adr/0004-use-jwt-bearer-authentication-boundary.md)
+
+## Mobil geliştirme
+
+Mobil uygulama `mobile/` klasöründedir. Kurulum, platforma göre API URL ayarı,
+authentication sınırı ve doğrulama komutları için
+[mobil geliştirme rehberine](mobile/README.md) bakın.
 
 ## Backend geliştirme
 
