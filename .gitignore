@@ -63,6 +63,7 @@ env/
 .env.*
 !.env.example
 !**/.env.example
+!mobile/.env.example
 appsettings.Local.json
 appsettings.*.Local.json
 secrets.json
@@ -78,3 +79,8 @@ secrets.json
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Expo CNG ve generated typing
+mobile/android/
+mobile/ios/
+mobile/expo-env.d.ts
