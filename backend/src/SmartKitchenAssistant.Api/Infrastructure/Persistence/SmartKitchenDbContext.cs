@@ -18,6 +18,11 @@ public sealed class SmartKitchenDbContext(DbContextOptions<SmartKitchenDbContext
 
     public DbSet<UserPantryItem> UserPantryItems => Set<UserPantryItem>();
 
+    public DbSet<StockConsumption> StockConsumptions => Set<StockConsumption>();
+
+    public DbSet<StockConsumptionItem> StockConsumptionItems =>
+        Set<StockConsumptionItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

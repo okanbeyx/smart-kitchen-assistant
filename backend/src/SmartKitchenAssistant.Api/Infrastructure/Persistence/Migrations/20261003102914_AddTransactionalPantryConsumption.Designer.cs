@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SmartKitchenAssistant.Api.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using SmartKitchenAssistant.Api.Infrastructure.Persistence;
 namespace SmartKitchenAssistant.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SmartKitchenDbContext))]
-    partial class SmartKitchenDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003102914_AddTransactionalPantryConsumption")]
+    partial class AddTransactionalPantryConsumption
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
