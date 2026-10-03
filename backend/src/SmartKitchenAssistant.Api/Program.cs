@@ -21,6 +21,9 @@ builder.Services.AddScoped<IPantryRepository, PantryRepository>();
 builder.Services.AddScoped<PantryService>();
 builder.Services.AddScoped<IRecipeReadRepository, RecipeReadRepository>();
 builder.Services.AddScoped<RecipeReadService>();
+builder.Services.AddScoped<IRecipeSuitabilityRepository, RecipeSuitabilityRepository>();
+builder.Services.AddScoped<RecipeSuitabilityCalculator>();
+builder.Services.AddScoped<RecipeSuitabilityService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.Configure<RouteHandlerOptions>(options =>
