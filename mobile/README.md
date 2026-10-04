@@ -76,6 +76,81 @@ provider SDK veya platform-specific yapılandırma gerektiğinde development bui
 ve local Expo module/config plugin kullanılacaktır. CNG tarafından üretilen
 native dosyalara kalıcı elle değişiklik yapılmamalıdır.
 
+## Görsel temel
+
+Renk, spacing, radius, system typography, shadow, layout ve icon boyutları
+`src/shared/theme/tokens.ts` içindedir. Ekranlar semantic tokenları ve shared
+primitiveleri kullanır; yeni hex renk veya bağımsız font ölçeği eklemeyin.
+Canlı `brand` kırmızısı dekoratiftir; beyaz buton metni için erişilebilir
+`primary` tonu kullanılır. Yalnız light tema desteklenir.
+
+İkonlar tek Ionicons ailesinden, `@react-native-vector-icons/ionicons` default
+dynamic import ile yüklenir. Expo Go için `/static` import veya native font
+plugin'i kullanılmaz. Metinler system font kullanır; icon yüklemesi auth veya
+splash beklemesine bağlanmaz.
+
+`motion.ts` kısa RN Animated opacity/transform davranışlarını merkezileştirir.
+Reduce Motion tercihi okunana kadar, okuma başarısızsa veya tercih açıksa
+dekoratif hareket kapalıdır. Tercih canlı takip edilir; açık hale gelince
+animasyon durur ve içerik görünür kalır. Bootstrap yalnız auth bootstrap
+durumunu gösterir; yapay gecikme veya animasyona bağlı navigation yoktur.
+
+`AppScreen` safe area, scroll ve 520/720 dp maksimum content genişliğini yönetir.
+Font scaling açık kalır; cihaz modeli veya sabit ekran ölçüsü varsayılmaz.
+Login bilgilendiricidir; Home mevcut auth guard arkasında gerçek veri içermeyen
+önizlemedir. Görsel kontrol için auth bypass veya preview route eklemeyin.
+
+## Tasarım ve hareket kararı — Issue #28
+
+Mevcut uygulama yalnız kısa içerik/kart girişleri, buton basma geri bildirimi ve
+bootstrap görselindeki dekoratif buhar hareketini içerir. React Native Animated,
+bu opacity/transform animasyonlarını `useNativeDriver` ile çalıştırabildiği ve
+ek animasyon bağımlılığı gerektirmediği için seçildi. Sistem fontları okunabilir
+Türkçe metin sağlar; özel font yükleme ve dağıtım maliyeti bu kapsamda gerekli
+görülmedi.
+
+- **Uyumluluk ve performans:** Animated mevcut Expo SDK 57 / React Native
+  kurulumunun parçasıdır; native driver mevcut hareketleri her karede JS
+  çalıştırmadan yürütür, ancak layout özelliklerini animasyonla yönetmez.
+  Reanimated da SDK 57 ile kullanılabilir; ek Reanimated/worklets bağımlılıkları
+  karşılığında UI thread üzerinde daha gelişmiş etkileşim ve layout animasyonları
+  sunar. Mevcut karmaşıklık için bu ek kapasite gerekli değildir.
+- **Gesture ve pişirme etkileşimleri:** Basit durum geçişleri Animated ile
+  sürdürülebilir. Gelecekte sürükleme, gesture ile yönetilen bottom-sheet veya
+  etkileşimli pişirme adımları daha gelişmiş hareket gerektirirse Reanimated
+  yeniden değerlendirilebilir. Bu etkileşimler henüz uygulanmış değildir.
+- **Foldable/adaptive layout:** İki araç da responsive yerleşimin veya safe-area
+  yönetiminin yerine geçmez. Önce esnek layout korunur; yalnız gerçek bir
+  etkileşim veya animasyonlu layout geçişi ihtiyacı doğarsa araç seçimi yenilenir.
+  Foldable-specific API bu issue kapsamında yoktur.
+- **Bakım ve erişilebilirlik:** Animated mevcut React effect/cleanup ve test
+  yaklaşımını korur. Reanimated ek API ve worklet bakımını gerektirir; reduced
+  motion seçenekleri sunsa da erişilebilirlik politikası ayrıca doğrulanmalıdır.
+  Mevcut Animated davranışı tercihi canlı izler; bilinmeyen/okunamayan tercihte
+  hareket kapalıdır, tercih açılınca hareket durur ve içerik görünür kalır.
+
+Aşağıdakiler gelecek feature çalışmaları için rehberdir; Issue #28'de
+uygulanmış bileşen veya akış değildir:
+
+- **Success/error:** Kısa, tek seferlik ve metin/ikonla desteklenen geri bildirim;
+  yalnız renge veya harekete dayanan anlam, belirgin sarsılma ve konfeti yok.
+- **Skeleton/loading:** Yalnız gerçek bekleme sırasında sade placeholder veya
+  hafif shimmer; Reduce Motion altında statik karşılık. Döngüler veri geldiğinde
+  veya unmount sırasında temizlenir; yapay bekleme süresi eklenmez.
+- **Modal/bottom-sheet:** Kısa giriş/çıkış; odak, kapatma ve geri gezinme davranışı
+  korunur. Gesture gereksinimi varsa Reanimated değerlendirilir; Reduce Motion
+  altında hareket kaldırılır veya sadeleştirilir.
+- **Liste ekleme/çıkarma:** Yalnız değişen öğede kısa, sınırlı geçiş; tüm listeyi
+  yeniden oynatma, uzun stagger veya işlemi animasyon bitişine bağlama yok.
+
+Hareket kısa, amaçlı ve etkileşimi engellemeyen bir destek olmalıdır; aşırı
+sekme veya oyun benzeri davranış kullanılmaz. Dekoratif bootstrap döngüsü yalnız
+gerçek auth bootstrap süresince çalışır; navigation animasyonu beklemez.
+
+Teknik referanslar: [React Native Animated](https://reactnative.dev/docs/animations),
+[Expo SDK 57 Reanimated](https://docs.expo.dev/versions/v57.0.0/sdk/reanimated/),
+[Reanimated erişilebilirlik](https://docs.swmansion.com/react-native-reanimated/docs/guides/accessibility/).
+
 ## Doğrulama
 
 ```powershell

@@ -1,0 +1,2 @@
+# Keep mobile text files LF on Windows and CI; auto preserves binary assets.
+* text=auto eol=lf

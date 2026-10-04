@@ -1,24 +1,34 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+
+import { AppScreen } from '@/shared/components/AppScreen';
+import { AppText } from '@/shared/components/AppText';
+import { KitchenMark } from '@/shared/components/KitchenMark';
+import { spacing } from '@/shared/theme/tokens';
 
 export function AppBootstrapScreen() {
   return (
-    <View style={styles.container} accessibilityRole="progressbar">
-      <ActivityIndicator size="large" color="#2563eb" />
-      <Text style={styles.label}>Uygulama hazırlanıyor…</Text>
-    </View>
+    <AppScreen scroll centered>
+      <KitchenMark animated />
+      <AppText variant="h1" style={styles.center}>
+        Smart Kitchen Assistant
+      </AppText>
+      <View
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel="Uygulama hazırlanıyor…"
+        accessibilityState={{ busy: true }}
+      >
+        <AppText tone="textSecondary" style={styles.center}>
+          Uygulama hazırlanıyor…
+        </AppText>
+      </View>
+      <AppText variant="caption" tone="textMuted" style={styles.center}>
+        Mutfağında yeni bir başlangıç.
+      </AppText>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    backgroundColor: '#f8fafc',
-  },
-  label: {
-    color: '#334155',
-    fontSize: 16,
-  },
+  center: { textAlign: 'center', marginHorizontal: spacing.sm },
 });
