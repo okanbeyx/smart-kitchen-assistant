@@ -1,46 +1,56 @@
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
+
+import { AnimatedEntrance } from '@/shared/components/AnimatedEntrance';
+import { AppButton } from '@/shared/components/AppButton';
+import { AppCard } from '@/shared/components/AppCard';
+import { AppScreen } from '@/shared/components/AppScreen';
+import { AppText } from '@/shared/components/AppText';
+import { KitchenMark } from '@/shared/components/KitchenMark';
+import { spacing } from '@/shared/theme/tokens';
 
 export function LoginScreen() {
-  const { width } = useWindowDimensions();
-  const contentWidth = Math.min(Math.max(width - 32, 0), 520);
-
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={[styles.content, { width: contentWidth }]}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Smart Kitchen Assistant
-        </Text>
-        <Text style={styles.description}>
-          Güvenli giriş entegrasyonu ayrı authentication çalışmasında eklenecek.
-        </Text>
-      </View>
-    </SafeAreaView>
+    <AppScreen scroll centered>
+      <AnimatedEntrance>
+        <View style={styles.hero}>
+          <KitchenMark />
+          <AppText variant="label" tone="primary" style={styles.center}>
+            MUTFAĞINDAN İLHAM AL
+          </AppText>
+          <AppText
+            variant="display"
+            accessibilityRole="header"
+            style={styles.center}
+          >
+            Smart Kitchen Assistant
+          </AppText>
+          <AppText tone="textSecondary" style={styles.center}>
+            Elindeki malzemeler, yeni fikirlerin başlangıcı.
+          </AppText>
+        </View>
+      </AnimatedEntrance>
+      <AppCard elevated>
+        <AppText variant="h3" accessibilityRole="header">
+          Güzel şeyler hazırlanıyor
+        </AppText>
+        <AppText tone="textSecondary">
+          Güvenli giriş entegrasyonu henüz hazır değil. Bu ekran yalnızca
+          uygulamanın tanıtımıdır; şu anda giriş yapılamaz.
+        </AppText>
+        <AppButton
+          label="Giriş yakında"
+          disabled
+          accessibilityHint="Güvenli giriş entegrasyonu sonraki çalışmada eklenecek."
+        />
+      </AppCard>
+      <AppText variant="caption" tone="textMuted" style={styles.center}>
+        Daha az israf, daha çok mutfak keyfi.
+      </AppText>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  content: {
-    alignItems: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  title: {
-    color: '#0f172a',
-    fontSize: 28,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  description: {
-    color: '#475569',
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: 'center',
-  },
+  hero: { gap: spacing.lg },
+  center: { textAlign: 'center' },
 });

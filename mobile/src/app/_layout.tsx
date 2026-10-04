@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/core/auth/AuthContext';
 import { getEnvironment } from '@/core/config/environment';
 import { appQueryClient } from '@/core/query/queryClient';
+import { colors } from '@/shared/theme/tokens';
 
 export default function RootLayout() {
   getEnvironment();
@@ -14,8 +15,13 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={appQueryClient}>
         <AuthProvider>
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }}>
+          <StatusBar style="dark" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+            }}
+          >
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(app)" />

@@ -1,47 +1,82 @@
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
+
+import { AnimatedEntrance } from '@/shared/components/AnimatedEntrance';
+import { AppCard } from '@/shared/components/AppCard';
+import { AppIcon } from '@/shared/components/AppIcon';
+import { AppScreen } from '@/shared/components/AppScreen';
+import { AppText } from '@/shared/components/AppText';
+import { StatusBadge } from '@/shared/components/StatusBadge';
+import { spacing } from '@/shared/theme/tokens';
 
 export function HomeScreen() {
-  const { width } = useWindowDimensions();
-  const contentWidth = Math.min(Math.max(width - 32, 0), 720);
-
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={[styles.content, { width: contentWidth }]}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Ana Sayfa
-        </Text>
-        <Text style={styles.description}>
-          Pantry, tarif uygunluğu ve pişirme akışları sonraki feature
-          çalışmalarında eklenecek.
-        </Text>
+    <AppScreen scroll size="wide">
+      <View style={styles.section}>
+        <AppText variant="label" tone="primary">
+          MUTFAĞINA HOŞ GELDİN
+        </AppText>
+        <AppText variant="h1" accessibilityRole="header">
+          Bugün mutfakta ne var?
+        </AppText>
+        <AppText tone="textSecondary">
+          Küçük fikirler, lezzetli başlangıçlar.
+        </AppText>
       </View>
-    </SafeAreaView>
+      <AnimatedEntrance>
+        <AppCard variant="soft">
+          <AppIcon name="restaurant-outline" size="large" tone="primary" />
+          <AppText variant="h2" accessibilityRole="header">
+            Mutfağını birlikte planlayalım
+          </AppText>
+          <AppText tone="textSecondary">
+            Malzemelerini tanı, tariflerden ilham al, mutfakta yeni olasılıkları
+            keşfet.
+          </AppText>
+        </AppCard>
+      </AnimatedEntrance>
+      <View style={styles.section}>
+        <AppText variant="h3" accessibilityRole="header">
+          Sırada neler var?
+        </AppText>
+        <AppText variant="caption" tone="textMuted">
+          Önizleme — özellikler henüz bağlı değil. Aşağıdaki kartlar gerçek veri
+          veya sonuç göstermez.
+        </AppText>
+      </View>
+      <AppCard>
+        <AppIcon name="basket-outline" tone="primary" />
+        <AppText variant="h3" accessibilityRole="header">
+          Pantry
+        </AppText>
+        <AppText tone="textSecondary">
+          Mutfağındaki malzemeleri düzenlemek için bir alan.
+        </AppText>
+        <StatusBadge label="Yakında" />
+      </AppCard>
+      <AppCard>
+        <AppIcon name="book-outline" tone="primary" />
+        <AppText variant="h3" accessibilityRole="header">
+          Tarifler
+        </AppText>
+        <AppText tone="textSecondary">
+          Yeni tatlar ve günlük yemekler için ilham.
+        </AppText>
+        <StatusBadge label="Yakında" />
+      </AppCard>
+      <AppCard>
+        <AppIcon name="bulb-outline" tone="primary" />
+        <AppText variant="h3" accessibilityRole="header">
+          Akıllı Öneriler
+        </AppText>
+        <AppText tone="textSecondary">
+          Elindeki malzemelerle neler yapabileceğini keşfet.
+        </AppText>
+        <StatusBadge label="Yakında" />
+      </AppCard>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  content: {
-    alignItems: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  title: {
-    color: '#0f172a',
-    fontSize: 28,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  description: {
-    color: '#475569',
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: 'center',
-  },
+  section: { gap: spacing.sm },
 });
