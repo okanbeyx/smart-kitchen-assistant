@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SmartKitchenAssistant.Api\SmartKitchenAssistant.Api.csproj" />
+    <ProjectReference Include="..\..\tools\SmartKitchenAssistant.DevDb\SmartKitchenAssistant.DevDb.csproj" />
   </ItemGroup>
 
 </Project>
