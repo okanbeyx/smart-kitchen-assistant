@@ -36,6 +36,12 @@ authentication sınırı ve doğrulama komutları için
 
 ## Backend geliştirme
 
+Kalıcı Docker SQL Server, yerel secrets, mevcut migration'lar, deterministic seed,
+explicit reset ve gerçek API smoke adımları için
+[development database rehberine](docs/development-database.md) bakın. Bu runtime,
+Testcontainers integration test database'lerinden bağımsızdır; API başlangıcı
+otomatik migration veya seed çalıştırmaz.
+
 ### Gereksinim ve proje konumları
 
 Backend, .NET 10 (`net10.0`) hedefler. Aşağıdaki komutlar .NET SDK `10.0.401` ile doğrulanmıştır.
