@@ -1,0 +1,97 @@
+diff --git a/node_modules/react-native-auth0/ios/NativeBridge.swift b/node_modules/react-native-auth0/ios/NativeBridge.swift
+index 91210c9..664acd8 100644
+--- a/node_modules/react-native-auth0/ios/NativeBridge.swift
++++ b/node_modules/react-native-auth0/ios/NativeBridge.swift
+@@ -12,6 +12,53 @@ import Foundation
+ import LocalAuthentication
+ import SimpleKeychain
+
++// Issue #32: retain Keychain deletion errors before Auth0.swift reduces them to Bool.
++// This is the CredentialsManager's existing storage, not an additional token vault.
++private final class A0IdempotentCredentialsStorage: CredentialsStorage {
++    private let keychain: SimpleKeychain
++    private let deletionLock = NSRecursiveLock()
++    private var deletionFailed = false
++
++    init(keychain: SimpleKeychain) {
++        self.keychain = keychain
++    }
++
++    func getEntry(forKey key: String) -> Data? {
++        return keychain.getEntry(forKey: key)
++    }
++
++    func setEntry(_ data: Data, forKey key: String) -> Bool {
++        return keychain.setEntry(data, forKey: key)
++    }
++
++    func deleteEntry(forKey key: String) -> Bool {
++        deletionLock.lock()
++        defer { deletionLock.unlock() }
++        do {
++            try keychain.deleteItem(forKey: key)
++            return true
++        } catch let error as SimpleKeychainError where error.status == SimpleKeychainError.itemNotFound.status {
++            return true
++        } catch {
++            deletionFailed = true
++            return false
++        }
++    }
++
++    func clear(_ operation: () -> Bool) -> Bool {
++        deletionLock.lock()
++        deletionFailed = false
++        defer {
++            deletionFailed = false
++            deletionLock.unlock()
++        }
++        // Auth0.swift clear() also deletes session metadata but ignores its results.
++        // Keep every genuine deletion failure visible, even if the main key was absent.
++        let removed = operation()
++        return removed && !deletionFailed
++    }
++}
++
+ @objc
+ public class NativeBridge: NSObject {
+
+@@ -43,6 +90,7 @@ public class NativeBridge: NSObject {
+     static let dpopClearKeyFailedCode = "DPOP_CLEAR_KEY_FAILED"
+
+     var credentialsManager: CredentialsManager
++    private let credentialStorage: A0IdempotentCredentialsStorage
+     var clientId: String
+     var domain: String
+     var useDPoP: Bool
+@@ -62,11 +110,15 @@ public class NativeBridge: NSObject {
+             auth0 = auth0.useDPoP()
+         }
+         // Namespace the keychain per client when a storage key is provided, else use the default service.
++        let keychain: SimpleKeychain
+         if let key = credentialsManagerStorageKey, !key.isEmpty {
+-            self.credentialsManager = CredentialsManager(authentication: auth0, storage: SimpleKeychain(service: key), maxRetries: maxRetries)
++            keychain = SimpleKeychain(service: key)
+         } else {
+-            self.credentialsManager = CredentialsManager(authentication: auth0, maxRetries: maxRetries)
++            keychain = SimpleKeychain()
+         }
++        let storage = A0IdempotentCredentialsStorage(keychain: keychain)
++        self.credentialStorage = storage
++        self.credentialsManager = CredentialsManager(authentication: auth0, storage: storage, maxRetries: maxRetries)
+         super.init()
+         if let localAuthenticationOptions = localAuthenticationOptions {
+             if let title = localAuthenticationOptions["title"] as? String {
+@@ -249,7 +301,11 @@ public class NativeBridge: NSObject {
+     }
+
+     @objc public func clearCredentials(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+-        let removed = credentialsManager.clear()
++        let removed = credentialStorage.clear { credentialsManager.clear() }
++        guard removed else {
++            reject("STORE_FAILED", "Failed to clear credentials from the Keychain.", nil)
++            return
++        }
+
+         // Also clear DPoP key if DPoP is enabled
+         if self.useDPoP {

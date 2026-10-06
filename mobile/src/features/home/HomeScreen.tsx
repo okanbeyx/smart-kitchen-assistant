@@ -1,5 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 
+import { useAuth } from '@/core/auth/AuthContext';
+import { AppButton } from '@/shared/components/AppButton';
+
 import { AnimatedEntrance } from '@/shared/components/AnimatedEntrance';
 import { AppCard } from '@/shared/components/AppCard';
 import { AppIcon } from '@/shared/components/AppIcon';
@@ -9,6 +12,7 @@ import { StatusBadge } from '@/shared/components/StatusBadge';
 import { spacing } from '@/shared/theme/tokens';
 
 export function HomeScreen() {
+  const { logout, pending } = useAuth();
   return (
     <AppScreen scroll size="wide">
       <View style={styles.section}>
@@ -73,6 +77,14 @@ export function HomeScreen() {
         </AppText>
         <StatusBadge label="Yakında" />
       </AppCard>
+      <AppButton
+        label="Bu cihazdan çıkış yap"
+        variant="secondary"
+        disabled={pending !== null}
+        onPress={() => {
+          void logout();
+        }}
+      />
     </AppScreen>
   );
 }

@@ -7,6 +7,8 @@ import { runInNewContext } from 'node:vm';
 import {
   EnvironmentConfigurationError,
   parseApiBaseUrl,
+  parseAuth0Domain,
+  parseAuth0Environment,
 } from '@/core/config/environment';
 
 describe('environment configuration', () => {
@@ -80,6 +82,84 @@ describe('environment configuration', () => {
       } else {
         process.env.EXPO_PUBLIC_API_BASE_URL = previousValue;
       }
+    }
+  });
+});
+
+describe('Auth0 public configuration', () => {
+  const valid = {
+    domain: 'tenant.eu.auth0.com',
+    clientId: 'PUBLIC_NATIVE_ID',
+    audience: 'urn:example:api',
+  };
+
+  it('normalizes the hostname and trims public identifiers', () => {
+    expect(
+      parseAuth0Environment({
+        domain: ' Tenant.EU.Auth0.com ',
+        clientId: ' PUBLIC_NATIVE_ID ',
+        audience: ' urn:example:api ',
+      }),
+    ).toEqual(valid);
+  });
+
+  it.each([
+    undefined,
+    '',
+    ' ',
+    'https://tenant.auth0.com',
+    'tenant.auth0.com/',
+    'user@tenant.auth0.com',
+    'tenant.auth0.com:443',
+    'tenant.auth0.com?x=1',
+    'tenant.auth0.com#x',
+    'localhost',
+    '127.0.0.1',
+    '-tenant.auth0.com',
+    'tenant..com',
+    'tenant_name.auth0.com',
+  ])('rejects invalid domain %p', (domain) => {
+    expect(() => parseAuth0Domain(domain)).toThrow(
+      EnvironmentConfigurationError,
+    );
+  });
+
+  it.each([undefined, '', ' ', 'client id', '<client-id>', 'client/secret'])(
+    'rejects invalid client ID %p',
+    (clientId) => {
+      expect(() => parseAuth0Environment({ ...valid, clientId })).toThrow(
+        EnvironmentConfigurationError,
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    '',
+    ' ',
+    'urn:api with spaces',
+    '<audience>',
+    'urn:api\u0000',
+  ])('rejects invalid audience %p', (audience) => {
+    expect(() => parseAuth0Environment({ ...valid, audience })).toThrow(
+      EnvironmentConfigurationError,
+    );
+  });
+
+  it('accepts an HTTPS API identifier without rewriting it', () => {
+    const audience = 'https://api.example.test/';
+    expect(parseAuth0Environment({ ...valid, audience }).audience).toBe(
+      audience,
+    );
+  });
+
+  it('does not include invalid values in errors', () => {
+    expect.assertions(1);
+    const unsafe = 'invalid value must not escape';
+    try {
+      parseAuth0Environment({ ...valid, clientId: unsafe });
+    } catch (error) {
+      expect(String(error)).not.toContain(unsafe);
     }
   });
 });

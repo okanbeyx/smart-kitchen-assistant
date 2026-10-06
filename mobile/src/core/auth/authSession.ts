@@ -1,11 +1,17 @@
+import type { AuthErrorKind } from './authError';
+
 export type AuthStatus = 'bootstrapping' | 'unauthenticated' | 'authenticated';
 
 export interface AuthSessionState {
   status: AuthStatus;
-  accessToken: string | null;
+  pending: 'restore' | 'login' | 'logout' | null;
+  error: AuthErrorKind | null;
+  cleanupRequired: boolean;
 }
 
 export const initialAuthSessionState: AuthSessionState = {
   status: 'bootstrapping',
-  accessToken: null,
+  pending: 'restore',
+  error: null,
+  cleanupRequired: false,
 };

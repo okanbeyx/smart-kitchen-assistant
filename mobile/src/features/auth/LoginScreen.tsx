@@ -1,5 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 
+import { useAuth } from '@/core/auth/AuthContext';
+import { authErrorMessage } from '@/core/auth/authError';
+
 import { AnimatedEntrance } from '@/shared/components/AnimatedEntrance';
 import { AppButton } from '@/shared/components/AppButton';
 import { AppCard } from '@/shared/components/AppCard';
@@ -9,6 +12,8 @@ import { KitchenMark } from '@/shared/components/KitchenMark';
 import { spacing } from '@/shared/theme/tokens';
 
 export function LoginScreen() {
+  const { login, logout, retryRestore, pending, error, cleanupRequired } =
+    useAuth();
   return (
     <AppScreen scroll centered>
       <AnimatedEntrance>
@@ -31,17 +36,43 @@ export function LoginScreen() {
       </AnimatedEntrance>
       <AppCard elevated>
         <AppText variant="h3" accessibilityRole="header">
-          Güzel şeyler hazırlanıyor
+          Mutfağına giriş yap
         </AppText>
         <AppText tone="textSecondary">
-          Güvenli giriş entegrasyonu henüz hazır değil. Bu ekran yalnızca
-          uygulamanın tanıtımıdır; şu anda giriş yapılamaz.
+          Güvenli giriş yapmak veya hesap oluşturmak için devam et.
         </AppText>
         <AppButton
-          label="Giriş yakında"
-          disabled
-          accessibilityHint="Güvenli giriş entegrasyonu sonraki çalışmada eklenecek."
+          label="Giriş yap / Kaydol"
+          loading={pending === 'login'}
+          disabled={pending !== null || cleanupRequired}
+          onPress={() => {
+            void login();
+          }}
+          accessibilityHint="Güvenli giriş sayfasını tarayıcıda açar."
         />
+        {error && (
+          <AppText accessibilityRole="alert">{authErrorMessage(error)}</AppText>
+        )}
+        {cleanupRequired && (
+          <AppButton
+            label="Oturum temizliğini tekrar dene"
+            loading={pending === 'logout'}
+            onPress={() => {
+              void logout();
+            }}
+          />
+        )}
+        {!cleanupRequired &&
+          error &&
+          ['network', 'provider', 'internal'].includes(error) && (
+            <AppButton
+              label="Oturumu tekrar kontrol et"
+              disabled={pending !== null}
+              onPress={() => {
+                void retryRestore();
+              }}
+            />
+          )}
       </AppCard>
       <AppText variant="caption" tone="textMuted" style={styles.center}>
         Daha az israf, daha çok mutfak keyfi.

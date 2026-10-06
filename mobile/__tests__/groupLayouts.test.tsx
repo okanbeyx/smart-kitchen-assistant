@@ -22,8 +22,11 @@ jest.mock('expo-router', () => {
 function setAuthStatus(status: AuthStatus) {
   jest.mocked(useAuth).mockReturnValue({
     status,
-    getAccessToken: () => null,
-    completeAuthentication: jest.fn(),
+    pending: null,
+    error: null,
+    cleanupRequired: false,
+    login: jest.fn(),
+    retryRestore: jest.fn(),
     logout: jest.fn(),
   });
 }

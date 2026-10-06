@@ -6,7 +6,11 @@
     "version": "1.0.0",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.okanbeyx.smartkitchenassistant.dev"
+    },
     "android": {
+      "package": "com.okanbeyx.smartkitchenassistant.dev",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
