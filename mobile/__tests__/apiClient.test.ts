@@ -13,6 +13,18 @@ function response(
   } as unknown as Response;
 }
 
+function createAuthSession(accessToken = 'access-token', generation = 1) {
+  return {
+    getRequestCredentials: jest.fn().mockResolvedValue({
+      accessToken,
+      generation,
+    }),
+    recoverRequestCredentials: jest.fn().mockResolvedValue({
+      accessToken,
+      generation,
+    }),
+  };
+}
 describe('apiClient', () => {
   afterEach(() => {
     jest.useRealTimers();
@@ -25,18 +37,18 @@ describe('apiClient', () => {
       .mockResolvedValue(
         response(200, JSON.stringify({ healthy: true })),
       ) as jest.MockedFunction<typeof fetch>;
-    const getAccessToken = jest.fn(() => 'access-token');
+    const authSession = createAuthSession('access-token');
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken,
+      authSession,
     });
 
     await client.request('/health');
 
     const request = fetchImplementation.mock.calls[0][1];
     expect(request?.headers).not.toHaveProperty('Authorization');
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
   });
 
   it('sends a bearer token for protected requests', async () => {
@@ -48,7 +60,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => 'access-token',
+      authSession: createAuthSession('access-token'),
     });
 
     await client.request('/api/pantry', { auth: 'required' });
@@ -64,7 +76,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => null,
+      authSession: createAuthSession(''),
     });
 
     await expect(
@@ -123,11 +135,11 @@ describe('apiClient', () => {
       const fetchImplementation = jest
         .fn()
         .mockResolvedValue(response(200, '{}'));
-      const getAccessToken = jest.fn(() => 'real-token');
+      const authSession = createAuthSession('real-token');
       const client = createApiClient({
         baseUrl: 'https://api.example.test',
         fetchImplementation,
-        getAccessToken,
+        authSession,
       });
 
       await client.request('/health', {
@@ -142,7 +154,7 @@ describe('apiClient', () => {
         ),
       ).toBe(false);
       expect(headers['X-Request']).toBe('kept');
-      expect(getAccessToken).not.toHaveBeenCalled();
+      expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
     },
   );
 
@@ -153,7 +165,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => 'real-token',
+      authSession: createAuthSession('real-token'),
     });
 
     await client.request('/api/pantry', {
@@ -176,11 +188,11 @@ describe('apiClient', () => {
     const controller = new AbortController();
     controller.abort();
     const fetchImplementation = jest.fn();
-    const getAccessToken = jest.fn(() => 'real-token');
+    const authSession = createAuthSession('real-token');
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken,
+      authSession,
     });
 
     await expect(
@@ -189,7 +201,7 @@ describe('apiClient', () => {
         signal: controller.signal,
       }),
     ).rejects.toMatchObject({ kind: 'cancelled' });
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 

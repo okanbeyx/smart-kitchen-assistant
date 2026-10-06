@@ -29,11 +29,6 @@ export interface ApiAuthSession {
 export interface ApiClientOptions {
   baseUrl?: string;
   authSession?: ApiAuthSession;
-
-  // Temporary Phase 3 compatibility seam.
-  // Production wiring will use authSession and this will be removed.
-  getAccessToken?: () => string | null | Promise<string | null>;
-
   fetchImplementation?: typeof fetch;
   timeoutMs?: number;
 }
@@ -79,30 +74,23 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       let requestCredentials: ApiRequestCredentials | undefined;
 
       if (auth === 'required') {
-        if (options.authSession) {
-          try {
-            requestCredentials =
-              await options.authSession.getRequestCredentials(
-                requestOptions.signal,
-              );
-          } catch (error) {
-            throw mapAuthSessionError(error);
-          }
-
-          if (!isValidRequestCredentials(requestCredentials)) {
-            throw new ApiError({ kind: 'auth' });
-          }
-
-          headers.Authorization = `Bearer ${requestCredentials.accessToken}`;
-        } else {
-          const accessToken = await options.getAccessToken?.();
-
-          if (!accessToken) {
-            throw new ApiError({ kind: 'auth' });
-          }
-
-          headers.Authorization = `Bearer ${accessToken}`;
+        if (!options.authSession) {
+          throw new ApiError({ kind: 'auth' });
         }
+
+        try {
+          requestCredentials = await options.authSession.getRequestCredentials(
+            requestOptions.signal,
+          );
+        } catch (error) {
+          throw mapAuthSessionError(error);
+        }
+
+        if (!isValidRequestCredentials(requestCredentials)) {
+          throw new ApiError({ kind: 'auth' });
+        }
+
+        headers.Authorization = `Bearer ${requestCredentials.accessToken}`;
       }
 
       if (requestOptions.signal?.aborted) {
