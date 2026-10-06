@@ -381,3 +381,172 @@ function pendingUntilAbort<T>(signal: AbortSignal): Promise<T> {
     }
   });
 }
+
+describe('session-aware 401 recovery', () => {
+  function session() {
+    return {
+      getRequestCredentials: jest.fn().mockResolvedValue({
+        accessToken: 'old-token',
+        generation: 7,
+      }),
+      recoverRequestCredentials: jest.fn().mockResolvedValue({
+        accessToken: 'new-token',
+        generation: 7,
+      }),
+    };
+  }
+
+  it('recovers a protected GET once after a 401 and replays with the new token', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValueOnce(response(401, '{"title":"Unauthorized"}'))
+      .mockResolvedValueOnce(response(200, '{"value":42}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request<{ value: number }>('/api/pantry', {
+        auth: 'required',
+      }),
+    ).resolves.toEqual({ value: 42 });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation.mock.calls[0][1]?.headers).toHaveProperty(
+      'Authorization',
+      'Bearer old-token',
+    );
+    expect(fetchImplementation.mock.calls[1][1]?.headers).toHaveProperty(
+      'Authorization',
+      'Bearer new-token',
+    );
+
+    expect(authSession.recoverRequestCredentials).toHaveBeenCalledTimes(1);
+    expect(
+      authSession.recoverRequestCredentials.mock.calls[0].slice(0, 2),
+    ).toEqual([7, 'old-token']);
+  });
+
+  it('stops after the single replay when the replay also returns 401', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValueOnce(response(401, '{}'))
+      .mockResolvedValueOnce(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(authSession.recoverRequestCredentials).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh or replay a protected 403', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(403, '{"title":"Forbidden"}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({
+      kind: 'http',
+      status: 403,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+  });
+
+  it('does not automatically replay a protected mutation after 401', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry/consume', {
+        method: 'POST',
+        auth: 'required',
+        body: { recipeId: 'fixture' },
+      }),
+    ).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recovered credential from another session generation without replaying', async () => {
+    const authSession = session();
+    authSession.recoverRequestCredentials.mockResolvedValue({
+      accessToken: 'new-account-token',
+      generation: 8,
+    });
+
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({ kind: 'auth' });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  it('never invokes the auth session for a public request', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{"title":"Unauthorized"}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(client.request('/health')).rejects.toMatchObject({
+      status: 401,
+    });
+
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+});
