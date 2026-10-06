@@ -32,6 +32,7 @@ beforeEach(() => {
       expiresAt: Date.now() / 1000 + 120,
     }),
     clearCredentials: jest.fn().mockResolvedValue(undefined),
+    revokeRefreshToken: jest.fn().mockResolvedValue(undefined),
     clearSession: jest.fn(),
   };
 });

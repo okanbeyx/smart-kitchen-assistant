@@ -24,6 +24,7 @@ export interface GetCredentialsOptions {
 export interface OidcClient {
   authorize(): Promise<void>;
   getCredentials(options?: GetCredentialsOptions): Promise<AccessCredentials>;
+  revokeRefreshToken(): Promise<void>;
   clearCredentials(): Promise<void>;
   clearSession(): Promise<void>;
 }
@@ -116,6 +117,40 @@ export function createAuth0OidcClient(config?: Auth0Environment): OidcClient {
         };
       } catch (error) {
         throw credentialError(error);
+      }
+    },
+    async revokeRefreshToken() {
+      let credentials;
+
+      try {
+        credentials = await sdk.credentialsManager.getCredentials();
+      } catch (error) {
+        const failure = credentialError(error);
+
+        // Nothing remains to revoke when the local/provider session is already
+        // absent or definitively invalid.
+        if (
+          failure.kind === 'no-session' ||
+          failure.kind === 'invalid-session'
+        ) {
+          return;
+        }
+
+        throw failure;
+      }
+
+      const refreshToken = credentials.refreshToken;
+
+      // A session without a refresh token has no refresh grant to revoke.
+      if (!refreshToken) {
+        return;
+      }
+
+      try {
+        // Keep the refresh token entirely inside the Auth0 SDK adapter.
+        await sdk.auth.revoke({ refreshToken });
+      } catch {
+        throw new AuthError('provider');
       }
     },
     async clearCredentials() {

@@ -39,6 +39,7 @@ const credentials = {
 };
 const sdk = {
   webAuth: { authorize: jest.fn(), clearSession: jest.fn() },
+  auth: { revoke: jest.fn() },
   credentialsManager: {
     saveCredentials: jest.fn(),
     getCredentials: jest.fn(),
@@ -52,6 +53,7 @@ beforeEach(() => {
   sdk.webAuth.authorize.mockResolvedValue(credentials);
   sdk.credentialsManager.saveCredentials.mockResolvedValue(undefined);
   sdk.credentialsManager.getCredentials.mockResolvedValue(credentials);
+  sdk.auth.revoke.mockResolvedValue(undefined);
 });
 
 it('creates a native Bearer client without a client secret', () => {
@@ -135,6 +137,56 @@ it('sanitizes credential retrieval failures without deciding session validity', 
   expect(sdk.credentialsManager.clearCredentials).not.toHaveBeenCalled();
 });
 
+it('revokes the SDK-held refresh token without exposing it through the adapter', async () => {
+  const client = createAuth0OidcClient(config);
+
+  await expect(client.revokeRefreshToken()).resolves.toBeUndefined();
+
+  expect(sdk.credentialsManager.getCredentials).toHaveBeenCalledTimes(1);
+  expect(sdk.auth.revoke).toHaveBeenCalledWith({
+    refreshToken: 'fixture-refresh',
+  });
+  expect(sdk.credentialsManager.clearCredentials).not.toHaveBeenCalled();
+  expect(sdk.webAuth.clearSession).not.toHaveBeenCalled();
+});
+
+it('treats an already missing session as having nothing left to revoke', async () => {
+  const error = Object.assign(new CredentialsManagerError({} as never), {
+    type: 'NO_CREDENTIALS',
+    code: 'NO_CREDENTIALS',
+  });
+
+  sdk.credentialsManager.getCredentials.mockRejectedValue(error);
+
+  await expect(
+    createAuth0OidcClient(config).revokeRefreshToken(),
+  ).resolves.toBeUndefined();
+
+  expect(sdk.auth.revoke).not.toHaveBeenCalled();
+});
+
+it('does not call the revoke endpoint when no refresh token is stored', async () => {
+  sdk.credentialsManager.getCredentials.mockResolvedValue({
+    ...credentials,
+    refreshToken: undefined,
+  });
+
+  await expect(
+    createAuth0OidcClient(config).revokeRefreshToken(),
+  ).resolves.toBeUndefined();
+
+  expect(sdk.auth.revoke).not.toHaveBeenCalled();
+});
+
+it('sanitizes refresh-token revocation failures', async () => {
+  sdk.auth.revoke.mockRejectedValue(credentials);
+
+  await expect(
+    createAuth0OidcClient(config).revokeRefreshToken(),
+  ).rejects.toEqual(new AuthError('provider'));
+
+  expect(sdk.credentialsManager.clearCredentials).not.toHaveBeenCalled();
+});
 it('keeps browser logout and local credential deletion independent', async () => {
   const client = createAuth0OidcClient(config);
   await client.clearSession();

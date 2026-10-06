@@ -26,6 +26,7 @@ beforeEach(() => {
     authorize: jest.fn().mockResolvedValue(undefined),
     getCredentials: jest.fn().mockImplementation(async () => usable()),
     clearCredentials: jest.fn().mockResolvedValue(undefined),
+    revokeRefreshToken: jest.fn().mockResolvedValue(undefined),
     clearSession: jest.fn(),
   };
   cleanup = jest.fn().mockResolvedValue(undefined);
