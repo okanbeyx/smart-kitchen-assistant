@@ -17,9 +17,13 @@ export interface AccessCredentials {
   expiresAt: number;
 }
 
+export interface GetCredentialsOptions {
+  forceRefresh?: boolean;
+}
+
 export interface OidcClient {
   authorize(): Promise<void>;
-  getCredentials(): Promise<AccessCredentials>;
+  getCredentials(options?: GetCredentialsOptions): Promise<AccessCredentials>;
   clearCredentials(): Promise<void>;
   clearSession(): Promise<void>;
 }
@@ -95,9 +99,16 @@ export function createAuth0OidcClient(config?: Auth0Environment): OidcClient {
         throw new AuthError('storage');
       }
     },
-    async getCredentials() {
+    async getCredentials(options: GetCredentialsOptions = {}) {
       try {
-        const credentials = await sdk.credentialsManager.getCredentials();
+        const credentials = options.forceRefresh
+          ? await sdk.credentialsManager.getCredentials(
+              undefined,
+              undefined,
+              undefined,
+              true,
+            )
+          : await sdk.credentialsManager.getCredentials();
         // Keep refresh/ID credentials inside the SDK boundary.
         return {
           accessToken: credentials.accessToken,

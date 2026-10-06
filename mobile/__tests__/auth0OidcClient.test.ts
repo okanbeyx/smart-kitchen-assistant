@@ -343,3 +343,20 @@ it('blocks login after genuine native deletion failure and recovers only after s
   await manager.login();
   expect(manager.getSnapshot().status).toBe('authenticated');
 });
+
+it('delegates force refresh to CredentialsManager without custom token handling', async () => {
+  const client = createAuth0OidcClient(config);
+
+  await expect(client.getCredentials({ forceRefresh: true })).resolves.toEqual({
+    accessToken: credentials.accessToken,
+    expiresAt: credentials.expiresAt,
+  });
+
+  expect(sdk.credentialsManager.getCredentials).toHaveBeenCalledWith(
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  expect(sdk.credentialsManager.saveCredentials).not.toHaveBeenCalled();
+});
