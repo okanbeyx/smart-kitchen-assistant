@@ -468,3 +468,157 @@ it('a delayed startup cannot restore after explicit logout', async () => {
   expect(provider.getCredentials).not.toHaveBeenCalled();
   expect(manager.getSnapshot().status).toBe('unauthenticated');
 });
+
+it('returns request credentials with the generation that produced them', async () => {
+  await manager.start();
+  const generation = manager.getGeneration();
+
+  await expect(manager.getRequestCredentials()).resolves.toEqual({
+    ...usable(),
+    generation,
+  });
+});
+
+it('shares one force refresh across concurrent rejected-token recovery', async () => {
+  await manager.start();
+  provider.getCredentials.mockClear();
+
+  const refreshed = deferred<ReturnType<typeof usable>>();
+
+  provider.getCredentials.mockImplementation(async (options) => {
+    if (options?.forceRefresh) {
+      return refreshed.promise;
+    }
+
+    return usable();
+  });
+
+  const generation = manager.getGeneration();
+  const first = manager.recoverRequestCredentials(generation, 'fixture-access');
+  const second = manager.recoverRequestCredentials(
+    generation,
+    'fixture-access',
+  );
+
+  await drain();
+
+  const forceRefreshCalls = provider.getCredentials.mock.calls.filter(
+    ([options]) => options?.forceRefresh === true,
+  );
+  expect(forceRefreshCalls).toHaveLength(1);
+
+  refreshed.resolve({
+    ...usable(),
+    accessToken: 'fixture-refreshed',
+  });
+
+  await expect(Promise.all([first, second])).resolves.toEqual([
+    {
+      ...usable(),
+      accessToken: 'fixture-refreshed',
+      generation,
+    },
+    {
+      ...usable(),
+      accessToken: 'fixture-refreshed',
+      generation,
+    },
+  ]);
+});
+
+it('does not force refresh again for a late 401 from an already replaced token', async () => {
+  let current = usable();
+  let forceRefreshCount = 0;
+
+  provider.getCredentials.mockImplementation(async (options) => {
+    if (options?.forceRefresh) {
+      forceRefreshCount += 1;
+      current = {
+        ...usable(),
+        accessToken: `fixture-refreshed-${forceRefreshCount}`,
+      };
+    }
+
+    return current;
+  });
+
+  await manager.start();
+  const generation = manager.getGeneration();
+
+  const first = await manager.recoverRequestCredentials(
+    generation,
+    'fixture-access',
+  );
+  expect(first.accessToken).toBe('fixture-refreshed-1');
+
+  const late = await manager.recoverRequestCredentials(
+    generation,
+    'fixture-access',
+  );
+
+  expect(late.accessToken).toBe('fixture-refreshed-1');
+  expect(forceRefreshCount).toBe(1);
+});
+
+it('rejects recovery from an old generation without refreshing the new session', async () => {
+  await manager.start();
+  const oldGeneration = manager.getGeneration();
+
+  await manager.logout();
+  provider.getCredentials.mockClear();
+
+  await expect(
+    manager.recoverRequestCredentials(oldGeneration, 'fixture-access'),
+  ).rejects.toMatchObject({ kind: 'no-session' });
+
+  expect(provider.getCredentials).not.toHaveBeenCalled();
+});
+
+it('preserves the authenticated session after a transient force-refresh failure', async () => {
+  await manager.start();
+  provider.getCredentials.mockClear();
+
+  provider.getCredentials.mockImplementation(async (options) => {
+    if (options?.forceRefresh) {
+      throw new AuthError('network');
+    }
+
+    return usable();
+  });
+
+  const generation = manager.getGeneration();
+
+  await expect(
+    manager.recoverRequestCredentials(generation, 'fixture-access'),
+  ).rejects.toMatchObject({ kind: 'network' });
+
+  expect(manager.getSnapshot().status).toBe('authenticated');
+  expect(provider.clearCredentials).not.toHaveBeenCalled();
+});
+
+it('signs out when force refresh proves the active session is invalid', async () => {
+  await manager.start();
+  provider.getCredentials.mockClear();
+
+  provider.getCredentials.mockImplementation(async (options) => {
+    if (options?.forceRefresh) {
+      throw new AuthError('invalid-session');
+    }
+
+    return usable();
+  });
+
+  const generation = manager.getGeneration();
+
+  await expect(
+    manager.recoverRequestCredentials(generation, 'fixture-access'),
+  ).rejects.toMatchObject({ kind: 'invalid-session' });
+
+  expect(manager.getSnapshot()).toMatchObject({
+    status: 'unauthenticated',
+    cleanupRequired: false,
+    error: 'invalid-session',
+  });
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+});

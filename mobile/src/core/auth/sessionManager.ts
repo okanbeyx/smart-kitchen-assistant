@@ -2,6 +2,9 @@ import type { AccessCredentials, OidcClient } from './auth0OidcClient';
 import { AuthError, AuthErrorKind } from './authError';
 import { AuthSessionState, initialAuthSessionState } from './authSession';
 
+export interface SessionRequestCredentials extends AccessCredentials {
+  generation: number;
+}
 function safeError(error: unknown): AuthError {
   return new AuthError(error instanceof AuthError ? error.kind : 'internal');
 }
@@ -43,6 +46,11 @@ export class SessionManager {
   private logoutRequest?: Promise<void>;
   private credentialsRequest?: {
     generation: number;
+    promise: Promise<AccessCredentials>;
+  };
+  private refreshRequest?: {
+    generation: number;
+    rejectedAccessToken: string;
     promise: Promise<AccessCredentials>;
   };
 
@@ -122,6 +130,47 @@ export class SessionManager {
     return promise;
   }
 
+  private refreshCredentials(
+    generation: number,
+    rejectedAccessToken: string,
+  ): Promise<AccessCredentials> {
+    if (
+      this.refreshRequest?.generation === generation &&
+      this.refreshRequest.rejectedAccessToken === rejectedAccessToken
+    ) {
+      return this.refreshRequest.promise;
+    }
+
+    const promise = this.enqueue(async () => {
+      this.assertCurrent(generation);
+      const credentials = await this.provider().getCredentials({
+        forceRefresh: true,
+      });
+      this.assertCurrent(generation);
+
+      if (
+        !credentials.accessToken ||
+        !Number.isFinite(credentials.expiresAt) ||
+        credentials.expiresAt <= Date.now() / 1000
+      ) {
+        throw new AuthError('invalid-session');
+      }
+
+      return credentials;
+    });
+
+    const request = { generation, rejectedAccessToken, promise };
+    this.refreshRequest = request;
+
+    const clear = () => {
+      if (this.refreshRequest === request) {
+        this.refreshRequest = undefined;
+      }
+    };
+
+    void promise.then(clear, clear);
+    return promise;
+  }
   private async restore(): Promise<void> {
     const generation = ++this.generation;
     this.update({ status: 'bootstrapping', pending: 'restore', error: null });
@@ -229,6 +278,59 @@ export class SessionManager {
     return request;
   }
 
+  getRequestCredentials = async (
+    signal?: AbortSignal,
+  ): Promise<SessionRequestCredentials> => {
+    const generation = this.generation;
+    const credentials = await this.getCredentials(signal);
+    this.assertCurrent(generation);
+
+    return { ...credentials, generation };
+  };
+
+  recoverRequestCredentials = async (
+    generation: number,
+    rejectedAccessToken: string,
+    signal?: AbortSignal,
+  ): Promise<SessionRequestCredentials> => {
+    if (signal?.aborted) throw new AuthError('cancelled');
+    if (this.state.status !== 'authenticated')
+      throw new AuthError('no-session');
+
+    this.assertCurrent(generation);
+
+    try {
+      const current = await waitFor(
+        this.credentials(generation),
+        this.waitTimeoutMs,
+        signal,
+      );
+      this.assertCurrent(generation);
+
+      // Another request may already have refreshed this rejected token.
+      if (current.accessToken !== rejectedAccessToken) {
+        return { ...current, generation };
+      }
+
+      const refreshed = await waitFor(
+        this.refreshCredentials(generation, rejectedAccessToken),
+        this.waitTimeoutMs,
+        signal,
+      );
+      this.assertCurrent(generation);
+
+      return { ...refreshed, generation };
+    } catch (error) {
+      this.assertCurrent(generation);
+      const failure = safeError(error);
+
+      if (failure.kind === 'invalid-session' || failure.kind === 'no-session') {
+        await this.signOut(failure.kind);
+      }
+
+      throw failure;
+    }
+  };
   // Service-layer API only. React context never exposes credentials.
   getCredentials = async (signal?: AbortSignal): Promise<AccessCredentials> => {
     if (signal?.aborted) throw new AuthError('cancelled');
