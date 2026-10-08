@@ -91,6 +91,12 @@ it('subscribes to restore and exposes no token API or arbitrary authentication b
 
 it('cancels pending queries and clears cache through the supplied SessionManager on logout', async () => {
   const { getAuth } = await renderAuth();
+  let finishRevocation!: () => void;
+  provider.revokeRefreshToken.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finishRevocation = resolve;
+    }),
+  );
 
   queryClient.setQueryData(['pantry'], ['private fixture']);
 
@@ -109,16 +115,23 @@ it('cancels pending queries and clears cache through the supplied SessionManager
     })
     .catch(() => undefined);
 
+  let logout!: Promise<void>;
   await act(async () => {
-    await getAuth().logout();
+    logout = getAuth().logout();
+    await fetch;
   });
-
-  await fetch;
 
   expect(aborted).toBe(true);
   expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
   expect(getAuth().status).toBe('unauthenticated');
+  expect(getAuth().pending).toBe('logout');
+  expect(provider.clearCredentials).not.toHaveBeenCalled();
+  await act(async () => {
+    finishRevocation();
+    await logout;
+  });
   expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
 });
 
 it('keeps logout storage failure visible after leaving authenticated UI', async () => {
@@ -153,4 +166,6 @@ it('maps a cancelled login to an unauthenticated state without an error alert', 
     error: null,
     pending: null,
   });
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  expect(provider.clearSession).not.toHaveBeenCalled();
 });

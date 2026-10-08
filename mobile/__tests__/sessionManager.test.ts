@@ -1,6 +1,7 @@
 import { AuthError } from '@/core/auth/authError';
 import type { OidcClient } from '@/core/auth/auth0OidcClient';
 import { SessionManager } from '@/core/auth/sessionManager';
+import { createApiClient } from '@/core/api/apiClient';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -65,6 +66,8 @@ it.each(['no-session', 'invalid-session'] as const)(
       error: kind === 'no-session' ? null : kind,
     });
     expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+    expect(provider.clearSession).not.toHaveBeenCalled();
   },
 );
 it.each(['network', 'provider', 'internal'] as const)(
@@ -152,13 +155,18 @@ it.each(['cancelled', 'provider', 'storage'] as const)(
       pending: null,
       error: kind === 'cancelled' ? null : kind,
     });
+    expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+    expect(provider.clearSession).not.toHaveBeenCalled();
   },
 );
-it('immediately invalidates the session and completes local logout', async () => {
+it('immediately invalidates the session and completes explicit logout', async () => {
   await manager.start();
   const before = manager.getGeneration();
   const logout = manager.logout();
   expect(manager.getGeneration()).toBeGreaterThan(before);
+  expect(() => manager.assertRequestGeneration(before)).toThrow(
+    new AuthError('stale'),
+  );
   expect(manager.getSnapshot()).toMatchObject({
     status: 'unauthenticated',
     pending: 'logout',
@@ -169,8 +177,336 @@ it('immediately invalidates the session and completes local logout', async () =>
   await logout;
   expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
   expect(cleanup).toHaveBeenCalledTimes(1);
-  expect(provider.clearSession).not.toHaveBeenCalled();
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot()).toMatchObject({
+    status: 'unauthenticated',
+    pending: null,
+    cleanupRequired: false,
+    error: null,
+  });
 });
+
+it('clears cache promptly and waits for revocation before deleting credentials and clearing the browser', async () => {
+  await manager.start();
+  const work = deferred<void>();
+  const operations: string[] = [];
+  cleanup.mockImplementation(async () => {
+    operations.push('cache');
+  });
+  provider.revokeRefreshToken.mockImplementation(async () => {
+    operations.push('revoke:start');
+    await work.promise;
+    operations.push('revoke:end');
+  });
+  provider.clearCredentials.mockImplementation(async () => {
+    operations.push('delete');
+  });
+  provider.clearSession.mockImplementation(async () => {
+    operations.push('browser');
+  });
+
+  const logout = manager.logout();
+  await drain();
+  expect(operations).toEqual(['cache', 'revoke:start']);
+  expect(provider.clearCredentials).not.toHaveBeenCalled();
+  expect(provider.clearSession).not.toHaveBeenCalled();
+  expect(manager.getSnapshot()).toMatchObject({
+    pending: 'logout',
+    cleanupRequired: false,
+  });
+  work.resolve();
+  await logout;
+  expect(operations).toEqual([
+    'cache',
+    'revoke:start',
+    'revoke:end',
+    'delete',
+    'browser',
+  ]);
+});
+
+it.each([
+  { revokeFailure: true, browserError: null, error: 'provider' },
+  { revokeFailure: false, browserError: 'provider', error: 'provider' },
+  { revokeFailure: false, browserError: 'cancelled', error: 'cancelled' },
+  { revokeFailure: true, browserError: 'provider', error: 'provider' },
+] as const)(
+  'keeps remote-only failure local-cleanup-safe: $revokeFailure/$browserError',
+  async ({ revokeFailure, browserError, error }) => {
+    await manager.start();
+    if (revokeFailure)
+      provider.revokeRefreshToken.mockRejectedValue(new AuthError('provider'));
+    if (browserError)
+      provider.clearSession.mockRejectedValue(new AuthError(browserError));
+
+    await manager.logout();
+    expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+    expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+    expect(provider.clearSession).toHaveBeenCalledTimes(1);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(
+      provider.revokeRefreshToken.mock.invocationCallOrder[0],
+    ).toBeLessThan(provider.clearCredentials.mock.invocationCallOrder[0]);
+    expect(manager.getSnapshot()).toMatchObject({
+      status: 'unauthenticated',
+      pending: null,
+      cleanupRequired: false,
+      error,
+    });
+    await manager.login();
+    expect(provider.authorize).toHaveBeenCalledTimes(1);
+    expect(manager.getSnapshot().status).toBe('authenticated');
+  },
+);
+
+it('coordinates duplicate explicit logout and blocks login/restore until browser work settles', async () => {
+  await manager.start();
+  const revoke = deferred<void>();
+  const browser = deferred<void>();
+  provider.revokeRefreshToken.mockReturnValue(revoke.promise);
+  provider.clearSession.mockReturnValue(browser.promise);
+  const first = manager.logout();
+  const generation = manager.getGeneration();
+  expect(manager.logout()).toBe(first);
+  expect(manager.getGeneration()).toBe(generation);
+  await drain();
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  revoke.resolve();
+  await drain();
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  expect(manager.logout()).toBe(first);
+  await manager.login();
+  await manager.retryRestore();
+  expect(provider.authorize).not.toHaveBeenCalled();
+  expect(provider.getCredentials).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot()).toMatchObject({
+    pending: 'logout',
+    cleanupRequired: false,
+  });
+  browser.resolve();
+  await first;
+  await manager.login();
+  expect(manager.getSnapshot().status).toBe('authenticated');
+});
+
+it.each([false, true])(
+  'escalates waiting internal cleanup before deletion, including revoke failure=%s',
+  async (revokeFails) => {
+    await manager.start();
+    const cache = deferred<void>();
+    const cacheStarted = deferred<void>();
+    const browser = deferred<void>();
+    const operations: string[] = [];
+    cleanup.mockImplementation(async () => {
+      operations.push('cache');
+      cacheStarted.resolve();
+      await cache.promise;
+    });
+    provider.revokeRefreshToken.mockImplementation(async () => {
+      operations.push('revoke');
+      if (revokeFails) throw new AuthError('provider');
+    });
+    provider.clearCredentials.mockImplementation(async () => {
+      operations.push('delete');
+    });
+    provider.clearSession.mockImplementation(async () => {
+      operations.push('browser');
+      await browser.promise;
+    });
+    provider.getCredentials.mockRejectedValueOnce(
+      new AuthError('invalid-session'),
+    );
+    const credentials = manager.getCredentials();
+    const rejected = expect(credentials).rejects.toMatchObject({
+      kind: 'invalid-session',
+    });
+    await cacheStarted.promise;
+    expect(manager.getSnapshot().pending).toBe('logout');
+    expect(provider.clearCredentials).not.toHaveBeenCalled();
+    expect(provider.clearSession).not.toHaveBeenCalled();
+    expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+
+    const generation = manager.getGeneration();
+    const logout = manager.logout();
+    expect(manager.getGeneration()).toBe(generation + 1);
+    expect(() => manager.assertRequestGeneration(generation)).toThrow(
+      new AuthError('stale'),
+    );
+    expect(manager.logout()).toBe(logout);
+    expect(manager.getGeneration()).toBe(generation + 1);
+    let completed = false;
+    void logout.then(() => {
+      completed = true;
+      operations.push('complete');
+    });
+    cache.resolve();
+    await drain();
+    expect(operations).toEqual(['cache', 'revoke', 'delete', 'browser']);
+    expect(completed).toBe(false);
+    expect(manager.getSnapshot().pending).toBe('logout');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    browser.resolve();
+    await Promise.all([logout, rejected]);
+    expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+    expect(provider.clearSession).toHaveBeenCalledTimes(1);
+    expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+    expect(
+      provider.revokeRefreshToken.mock.invocationCallOrder[0],
+    ).toBeLessThan(provider.clearCredentials.mock.invocationCallOrder[0]);
+    expect(operations).toEqual([
+      'cache',
+      'revoke',
+      'delete',
+      'browser',
+      'complete',
+    ]);
+    expect(manager.getSnapshot()).toMatchObject({
+      pending: null,
+      error: revokeFails ? 'provider' : null,
+      cleanupRequired: false,
+    });
+  },
+);
+
+it('escalates queued internal cleanup from a synchronous listener and shares its work', async () => {
+  await manager.start();
+  const operations: string[] = [];
+  provider.revokeRefreshToken.mockImplementation(async () => {
+    operations.push('revoke');
+  });
+  provider.clearCredentials.mockImplementation(async () => {
+    operations.push('delete');
+  });
+  provider.clearSession.mockImplementation(async () => {
+    operations.push('browser');
+  });
+  let logout: Promise<void> | undefined;
+  const unsubscribe = manager.subscribe(() => {
+    if (manager.getSnapshot().pending === 'logout') {
+      unsubscribe();
+      logout = manager.logout();
+      expect(manager.logout()).toBe(logout);
+    }
+  });
+  provider.getCredentials.mockRejectedValueOnce(
+    new AuthError('invalid-session'),
+  );
+  await expect(manager.getCredentials()).rejects.toMatchObject({
+    kind: 'invalid-session',
+  });
+  expect(logout).toBeDefined();
+  await logout;
+  expect(operations).toEqual(['revoke', 'delete', 'browser']);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot()).toMatchObject({
+    pending: null,
+    error: null,
+    cleanupRequired: false,
+  });
+});
+
+it('keeps plain waiting internal cleanup local without revocation or browser logout', async () => {
+  await manager.start();
+  const cache = deferred<void>();
+  const entered = deferred<void>();
+  cleanup.mockImplementation(async () => {
+    entered.resolve();
+    await cache.promise;
+  });
+  provider.getCredentials.mockRejectedValueOnce(
+    new AuthError('invalid-session'),
+  );
+  const credentials = manager.getCredentials();
+  const rejected = expect(credentials).rejects.toMatchObject({
+    kind: 'invalid-session',
+  });
+  await entered.promise;
+  expect(provider.clearCredentials).not.toHaveBeenCalled();
+  cache.resolve();
+  await rejected;
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  expect(provider.clearSession).not.toHaveBeenCalled();
+  expect(manager.getSnapshot()).toMatchObject({
+    pending: null,
+    error: 'invalid-session',
+    cleanupRequired: false,
+  });
+});
+
+it('shares cleanup when escalation arrives after native deletion was already dispatched', async () => {
+  await manager.start();
+  const deletion = deferred<void>();
+  provider.clearCredentials.mockReturnValueOnce(deletion.promise);
+  provider.getCredentials.mockRejectedValueOnce(
+    new AuthError('invalid-session'),
+  );
+  const credentials = manager.getCredentials();
+  const rejected = expect(credentials).rejects.toMatchObject({
+    kind: 'invalid-session',
+  });
+  await drain();
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  const logout = manager.logout();
+  expect(manager.logout()).toBe(logout);
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  deletion.reject(new AuthError('storage'));
+  await Promise.all([logout, rejected]);
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot()).toMatchObject({
+    pending: null,
+    error: 'storage',
+    cleanupRequired: true,
+  });
+});
+
+it.each(['GET', 'POST'] as const)(
+  'rejects old-generation %s data while explicit logout revocation is still pending',
+  async (method) => {
+    await manager.start();
+    const revoke = deferred<void>();
+    const body = deferred<string>();
+    const bodyStarted = deferred<void>();
+    provider.revokeRefreshToken.mockReturnValue(revoke.promise);
+    const fetchImplementation = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => {
+        bodyStarted.resolve();
+        return body.promise;
+      },
+    } as Response);
+    const api = createApiClient({
+      baseUrl: 'https://api.example.test',
+      authSession: manager,
+      fetchImplementation,
+    });
+    const request = api.request('/api/pantry', { auth: 'required', method });
+    const rejected = expect(request).rejects.toMatchObject({ kind: 'auth' });
+    await bodyStarted.promise;
+    const generation = manager.getGeneration();
+    const logout = manager.logout();
+    expect(() => manager.assertRequestGeneration(generation)).toThrow(
+      new AuthError('stale'),
+    );
+    body.resolve('{"private":"fixture-old-account"}');
+    await rejected;
+    expect(manager.getSnapshot()).toMatchObject({
+      status: 'unauthenticated',
+      pending: 'logout',
+    });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(provider.clearCredentials).not.toHaveBeenCalled();
+    revoke.resolve();
+    await logout;
+  },
+);
 it('reports failed cleanup, blocks restore/login, and permits retrying logout', async () => {
   const vault = {
     credentials: usable() as ReturnType<typeof usable> | null,
@@ -185,6 +521,8 @@ it('reports failed cleanup, blocks restore/login, and permits retrying logout', 
   });
   await manager.start();
   await manager.logout();
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
   expect(manager.getSnapshot()).toMatchObject({
     status: 'unauthenticated',
     error: 'storage',
@@ -198,6 +536,8 @@ it('reports failed cleanup, blocks restore/login, and permits retrying logout', 
   vault.deletionFails = false;
   await manager.logout();
   expect(manager.getSnapshot().cleanupRequired).toBe(false);
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(2);
+  expect(provider.clearSession).toHaveBeenCalledTimes(2);
   expect(vault.credentials).toBeNull();
   await manager.login();
   expect(manager.getSnapshot().status).toBe('authenticated');
@@ -296,11 +636,15 @@ it('cleans the vault after an in-flight restore settles on logout', async () => 
   await drain();
   expect(loggedOut).toBe(false);
   expect(provider.clearCredentials).not.toHaveBeenCalled();
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
   expect(operations).toEqual(['restore:start']);
   work.resolve(usable());
   await Promise.all([start, logout]);
   expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
   expect(operations).toEqual(['restore:start', 'restore:save', 'clear']);
+  expect(provider.revokeRefreshToken.mock.invocationCallOrder[0]).toBeLessThan(
+    provider.clearCredentials.mock.invocationCallOrder[0],
+  );
   expect(vault.credentials).toBeNull();
   expect(statuses).not.toContain('authenticated');
   expect(manager.getSnapshot().status).toBe('unauthenticated');
@@ -364,6 +708,7 @@ it('logout waits for authorize save, blocks new login, then allows a clean new a
   expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
   expect(operations).toEqual(['clear', 'authorize:start']);
   expect(provider.authorize).toHaveBeenCalledTimes(1);
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
   work.resolve();
   await Promise.all([firstLogin, logout]);
   expect(operations).toEqual([
@@ -372,6 +717,9 @@ it('logout waits for authorize save, blocks new login, then allows a clean new a
     'authorize:save',
     'clear',
   ]);
+  expect(provider.revokeRefreshToken.mock.invocationCallOrder[0]).toBeLessThan(
+    provider.clearCredentials.mock.invocationCallOrder[1],
+  );
   expect(vault.credentials).toBeNull();
   expect(statuses).not.toContain('authenticated');
   expect(manager.getSnapshot().status).toBe('unauthenticated');
@@ -402,6 +750,8 @@ it('centrally signs out when active credentials are invalid', async () => {
   });
   expect(manager.getSnapshot().status).toBe('unauthenticated');
   expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  expect(provider.clearSession).not.toHaveBeenCalled();
 });
 it('unsubscribes state listeners', async () => {
   const listener = jest.fn();
@@ -437,6 +787,20 @@ it('reports cache cleanup failure while still clearing the provider vault', asyn
   expect(manager.getSnapshot()).toMatchObject({
     status: 'unauthenticated',
     cleanupRequired: true,
+    error: 'internal',
+  });
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  await manager.login();
+  await manager.retryRestore();
+  expect(provider.authorize).not.toHaveBeenCalled();
+  expect(provider.getCredentials).toHaveBeenCalledTimes(1);
+  cleanup.mockResolvedValue(undefined);
+  await manager.logout();
+  expect(cleanup).toHaveBeenCalledTimes(2);
+  expect(manager.getSnapshot()).toMatchObject({
+    cleanupRequired: false,
+    error: null,
   });
 });
 it('does not construct a provider eagerly and sanitizes configuration failure', async () => {
@@ -641,4 +1005,61 @@ it('signs out when force refresh proves the active session is invalid', async ()
   });
   expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
   expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  expect(provider.clearSession).not.toHaveBeenCalled();
+});
+
+it('retains local failure semantics even when both remote operations also fail', async () => {
+  await manager.start();
+  provider.revokeRefreshToken.mockRejectedValue(new AuthError('provider'));
+  provider.clearCredentials.mockRejectedValue(new AuthError('storage'));
+  provider.clearSession.mockRejectedValue(new AuthError('cancelled'));
+  cleanup.mockRejectedValue(new Error('private fixture cache error'));
+  await manager.logout();
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.clearCredentials).toHaveBeenCalledTimes(1);
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot()).toMatchObject({
+    status: 'unauthenticated',
+    pending: null,
+    cleanupRequired: true,
+    error: 'storage',
+  });
+  expect(JSON.stringify(manager.getSnapshot())).not.toContain('private');
+});
+
+it('waits for an in-flight force refresh before revocation and rejects its old-generation result', async () => {
+  await manager.start();
+  const refresh = deferred<ReturnType<typeof usable>>();
+  const refreshStarted = deferred<void>();
+  provider.getCredentials.mockImplementation(async (options) => {
+    if (options?.forceRefresh) {
+      refreshStarted.resolve();
+      return refresh.promise;
+    }
+    return usable();
+  });
+  const generation = manager.getGeneration();
+  const recovery = manager.recoverRequestCredentials(
+    generation,
+    'fixture-access',
+  );
+  const rejected = expect(recovery).rejects.toMatchObject({ kind: 'stale' });
+  await refreshStarted.promise;
+  const logout = manager.logout();
+  await drain();
+  expect(provider.revokeRefreshToken).not.toHaveBeenCalled();
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(() => manager.assertRequestGeneration(generation)).toThrow(
+    new AuthError('stale'),
+  );
+  refresh.resolve({ ...usable(), accessToken: 'fixture-refreshed' });
+  await Promise.all([logout, rejected]);
+  expect(provider.revokeRefreshToken).toHaveBeenCalledTimes(1);
+  expect(provider.revokeRefreshToken.mock.invocationCallOrder[0]).toBeLessThan(
+    provider.clearCredentials.mock.invocationCallOrder[0],
+  );
+  expect(provider.clearSession).toHaveBeenCalledTimes(1);
+  expect(manager.getSnapshot().status).toBe('unauthenticated');
 });

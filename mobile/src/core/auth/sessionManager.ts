@@ -44,6 +44,11 @@ export class SessionManager {
   private started?: Promise<void>;
   private loginRequest?: Promise<void>;
   private logoutRequest?: Promise<void>;
+  private logoutIntent?: {
+    explicit: boolean;
+    generation: number;
+    reason: AuthErrorKind | null;
+  };
   private credentialsRequest?: {
     generation: number;
     promise: Promise<AccessCredentials>;
@@ -241,18 +246,32 @@ export class SessionManager {
     return request;
   };
 
-  logout = (): Promise<void> => this.signOut(null);
+  logout = (): Promise<void> => this.signOut(null, true);
 
-  private signOut(reason: AuthErrorKind | null): Promise<void> {
-    if (this.state.pending === 'logout' && this.logoutRequest)
+  private signOut(
+    reason: AuthErrorKind | null,
+    explicitLogout = false,
+  ): Promise<void> {
+    if (
+      this.state.pending === 'logout' &&
+      this.logoutRequest &&
+      this.logoutIntent
+    ) {
+      if (explicitLogout && !this.logoutIntent.explicit) {
+        // Upgrade the same queued/running cleanup, never append a second delete.
+        this.logoutIntent.explicit = true;
+        this.logoutIntent.generation = ++this.generation;
+        this.logoutIntent.reason = null;
+        this.update({ error: null });
+      }
       return this.logoutRequest;
-    const generation = ++this.generation;
-    this.update({
-      status: 'unauthenticated',
-      pending: 'logout',
-      error: reason,
-      cleanupRequired: true,
-    });
+    }
+    const intent = {
+      explicit: explicitLogout,
+      generation: ++this.generation,
+      reason,
+    };
+    this.logoutIntent = intent;
     // Cancel queries promptly; the queue still prevents overlap with a new account.
     const cacheCleanup = Promise.resolve()
       .then(this.clearUserCache)
@@ -261,16 +280,58 @@ export class SessionManager {
         () => false,
       );
     const request = this.enqueue(async () => {
+      let remoteError: AuthErrorKind | null = null;
+      let localError: AuthErrorKind | null = null;
+      let revocationAttempted = false;
+
+      const revoke = async () => {
+        revocationAttempted = true;
+        try {
+          // The adapter reads/revokes the refresh token before vault deletion.
+          await this.provider().revokeRefreshToken();
+        } catch (error) {
+          remoteError = safeError(error).kind;
+        }
+      };
+
+      // Finish the local wait before the last intent check preceding deletion.
+      // There is no await between a non-explicit check and clearCredentials().
       const cacheCleared = await cacheCleanup;
-      await this.provider().clearCredentials();
-      if (!cacheCleared) throw new AuthError('internal');
+      if (intent.explicit) await revoke();
+
+      try {
+        await this.provider().clearCredentials();
+      } catch {
+        localError = 'storage';
+      }
+      if (!cacheCleared && !localError) localError = 'internal';
+      if (intent.generation === this.generation)
+        this.update({ cleanupRequired: localError !== null });
+
+      if (intent.explicit) {
+        // Deletion already dispatched cannot be reordered. A later escalation
+        // still attempts revocation (including after failed deletion) and SSO.
+        if (!revocationAttempted) await revoke();
+        try {
+          // Browser cleanup must also be attempted after a local cleanup failure.
+          await this.provider().clearSession();
+        } catch (error) {
+          remoteError ??= safeError(error).kind;
+        }
+      }
+
+      // Complete in the same turn as the last intent check, so escalation cannot
+      // slip between skipping browser cleanup and a separate completion callback.
+      if (intent.generation === this.generation)
+        this.update({
+          pending: null,
+          error: localError ?? remoteError ?? intent.reason,
+          cleanupRequired: localError !== null,
+        });
     }).then(
+      () => undefined,
       () => {
-        if (generation === this.generation)
-          this.update({ pending: null, error: reason, cleanupRequired: false });
-      },
-      () => {
-        if (generation === this.generation)
+        if (intent.generation === this.generation)
           this.update({
             pending: null,
             error: 'storage',
@@ -279,6 +340,13 @@ export class SessionManager {
       },
     );
     this.logoutRequest = request;
+    // Publish only after the shared work is available to synchronous listeners.
+    this.update({
+      status: 'unauthenticated',
+      pending: 'logout',
+      error: reason,
+      cleanupRequired: this.state.cleanupRequired,
+    });
     return request;
   }
 

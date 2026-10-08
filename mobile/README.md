@@ -111,17 +111,31 @@ kapatır; devam eden SDK işlemi bittikten sonra kasayı temizler. Geç gelen so
 yeniden giriş yaptıramaz. SDK işlemi bekleme süresini aşsa da native iş bitmeden
 temizlik tamamlandı sayılmaz ve yeni giriş başlatılmaz.
 
-Home'daki “Bu cihazdan çıkış yap” yerel kasayı ve mevcut QueryClient cache'ini
-temizler, aktif sorguları iptal eder. Şimdilik public/user cache ayrımı olmadığı
-için tüm query/mutation cache temizlenir; aynı temizlik hesap değişiminde de
-uygulanır. Kasa temizliği başarısızsa kullanıcı unauthenticated kalır, güvenli hata
-ve temizlik tekrar deneme düğmesi gösterilir; login/restore temizliğe kadar
-engellenir. Bu durum başarılı logout olarak sunulmaz.
+Home'daki “Bu cihazdan çıkış yap”, Faz 3C-2 / Issue #32 kapsamında açık kullanıcı
+logout'unu başlatır. Nesil ve yerel oturum durumu hemen geçersizleşir; aktif
+sorguların iptali ve cache temizliği SDK kuyruğunu beklemeden başlar. Kuyrukta
+devam eden SDK işi ve cache temizliği tamamlandıktan sonra önce adapter içindeki
+refresh token revoke edilir, ardından CredentialsManager kaydı silinir ve
+Auth0 browser/SSO oturumu `clearSession()` ile kapatılmaya
+çalışılır. Refresh/ID token adapter dışına çıkmaz.
 
-Browser oturumu ve refresh-token revocation henüz yönetilmez. Bu nedenle yerel
-çıkıştan sonraki girişte provider browser oturumu hesabı yeniden seçebilir.
-`clearSession()` adapter'da bulunur ancak Faz 2 akışı çağırmaz. HTTP 401 replay,
-API bağlantısı ve remote logout/revocation Faz 3 kapsamındadır.
+Revocation hatası yerel silmeyi veya browser temizliğini durdurmaz; browser
+hatası/iptali authentication'ı geri getirmez. Uzak hatalar güvenli hata türü olarak
+bildirilir, tek başlarına `cleanupRequired` oluşturmaz. Bu bayrak yalnız yerel
+kasa silme veya zorunlu cache temizliği başarısızsa açılır; kullanıcı
+unauthenticated kalır, login/restore engellenir ve logout ile temizlik tekrar
+denenebilir. Logout sürerken tekrarlanan açık logout aynı işi paylaşır; yeni login
+ve restore browser işi sonuçlanana kadar engellenir.
+
+İç temizlik beklerken gelen açık logout aynı işin niyetini yükseltir. Credential
+silme başlamadan önce bu niyet kontrol edilir; revocation silmeden önce denenir.
+İkinci bir temizlik işi eklenmez. Native silme zaten başlatılmışsa geriye dönük
+sıralama yapılamaz; aynı iş içinde yine revocation ve browser temizliği denenir.
+
+Eksik/geçersiz oturum, credential recovery hatası ve başarısız/iptal edilmiş login
+nedeniyle çalışan iç `signOut` yalnız yerel temizlik yapar; revocation veya browser
+logout başlatmaz. Şimdilik public/user cache ayrımı olmadığı için tüm
+query/mutation cache temizlenir; aynı yerel temizlik hesap değişiminde de uygulanır.
 
 ## iOS credential temizliği yaması — Issue #32
 

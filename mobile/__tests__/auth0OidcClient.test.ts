@@ -365,7 +365,11 @@ it('allows first-launch restore, login, repeated logout and another login throug
   await manager.login();
   expect(manager.getSnapshot().status).toBe('authenticated');
   expect(sdk.webAuth.authorize).toHaveBeenCalledTimes(2);
-  expect(sdk.webAuth.clearSession).not.toHaveBeenCalled();
+  expect(sdk.auth.revoke).toHaveBeenCalledTimes(1);
+  expect(sdk.auth.revoke).toHaveBeenCalledWith({
+    refreshToken: 'fixture-refresh',
+  });
+  expect(sdk.webAuth.clearSession).toHaveBeenCalledTimes(2);
 });
 
 it('blocks login after genuine native deletion failure and recovers only after successful cleanup', async () => {
@@ -377,6 +381,8 @@ it('blocks login after genuine native deletion failure and recovers only after s
   await manager.start();
   vault.deletionError = new Error('private fixture Keychain error');
   await manager.logout();
+  expect(sdk.auth.revoke).toHaveBeenCalledTimes(1);
+  expect(sdk.webAuth.clearSession).toHaveBeenCalledTimes(1);
   expect(manager.getSnapshot()).toMatchObject({
     status: 'unauthenticated',
     cleanupRequired: true,
@@ -387,6 +393,7 @@ it('blocks login after genuine native deletion failure and recovers only after s
   expect(vault.stored).toEqual(credentials);
   vault.deletionError = null;
   await manager.logout();
+  expect(sdk.webAuth.clearSession).toHaveBeenCalledTimes(2);
   expect(vault.stored).toBeNull();
   expect(manager.getSnapshot()).toMatchObject({
     cleanupRequired: false,
