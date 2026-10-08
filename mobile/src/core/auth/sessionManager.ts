@@ -62,6 +62,10 @@ export class SessionManager {
 
   getSnapshot = (): AuthSessionState => this.state;
   getGeneration = (): number => this.generation;
+  // Synchronous service-layer guard; never reads credentials or the vault.
+  assertRequestGeneration = (generation: number): void => {
+    this.assertCurrent(generation);
+  };
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {

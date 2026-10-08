@@ -480,6 +480,26 @@ it('returns request credentials with the generation that produced them', async (
   });
 });
 
+it('synchronously rejects obsolete request generations without reading the vault', async () => {
+  await manager.start();
+  const generation = manager.getGeneration();
+  provider.getCredentials.mockClear();
+  expect(() => manager.assertRequestGeneration(generation)).not.toThrow();
+
+  await manager.logout();
+  expect(() => manager.assertRequestGeneration(generation)).toThrow(
+    new AuthError('stale'),
+  );
+  await manager.login();
+  expect(() => manager.assertRequestGeneration(generation)).toThrow(
+    new AuthError('stale'),
+  );
+  expect(() =>
+    manager.assertRequestGeneration(manager.getGeneration()),
+  ).not.toThrow();
+  expect(provider.getCredentials).not.toHaveBeenCalled();
+});
+
 it('shares one force refresh across concurrent rejected-token recovery', async () => {
   await manager.start();
   provider.getCredentials.mockClear();
@@ -508,20 +528,19 @@ it('shares one force refresh across concurrent rejected-token recovery', async (
   );
   expect(forceRefreshCalls).toHaveLength(1);
 
-  refreshed.resolve({
+  const refreshedCredentials = {
     ...usable(),
     accessToken: 'fixture-refreshed',
-  });
+  };
+  refreshed.resolve(refreshedCredentials);
 
   await expect(Promise.all([first, second])).resolves.toEqual([
     {
-      ...usable(),
-      accessToken: 'fixture-refreshed',
+      ...refreshedCredentials,
       generation,
     },
     {
-      ...usable(),
-      accessToken: 'fixture-refreshed',
+      ...refreshedCredentials,
       generation,
     },
   ]);

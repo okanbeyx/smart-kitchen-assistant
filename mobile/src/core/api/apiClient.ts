@@ -18,6 +18,7 @@ export interface ApiRequestCredentials {
 }
 
 export interface ApiAuthSession {
+  assertRequestGeneration(generation: number): void;
   getRequestCredentials(signal?: AbortSignal): Promise<ApiRequestCredentials>;
   recoverRequestCredentials(
     generation: number,
@@ -219,15 +220,28 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
           );
         }
 
-        if (!responseBody) {
-          return undefined as T;
+        let data = undefined as T;
+        if (responseBody) {
+          try {
+            data = JSON.parse(responseBody) as T;
+          } catch {
+            throw new ApiError({ kind: 'parse', status: response.status });
+          }
         }
 
-        try {
-          return JSON.parse(responseBody) as T;
-        } catch {
-          throw new ApiError({ kind: 'parse', status: response.status });
+        // Check after body reading/parsing, including empty successes and replays.
+        // Keep this synchronous with delivery so old account data cannot escape.
+        if (auth === 'required') {
+          try {
+            options.authSession!.assertRequestGeneration(
+              requestCredentials!.generation,
+            );
+          } catch (error) {
+            throw mapAuthSessionError(error);
+          }
         }
+
+        return data;
       } catch (error) {
         if (abortKind) {
           throw new ApiError({ kind: abortKind });
