@@ -1,4 +1,6 @@
 import { createApiClient } from '@/core/api/apiClient';
+import type { OidcClient } from '@/core/auth/auth0OidcClient';
+import { SessionManager } from '@/core/auth/sessionManager';
 
 function response(
   status: number,
@@ -13,6 +15,230 @@ function response(
   } as unknown as Response;
 }
 
+function createAuthSession(accessToken = 'access-token', generation = 1) {
+  return {
+    assertRequestGeneration: jest.fn(),
+    getRequestCredentials: jest.fn().mockResolvedValue({
+      accessToken,
+      generation,
+    }),
+    recoverRequestCredentials: jest.fn().mockResolvedValue({
+      accessToken,
+      generation,
+    }),
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((yes) => {
+    resolve = yes;
+  });
+  return { promise, resolve };
+}
+
+describe('successful response session boundaries', () => {
+  async function setup() {
+    const provider: jest.Mocked<OidcClient> = {
+      authorize: jest.fn().mockResolvedValue(undefined),
+      getCredentials: jest.fn().mockResolvedValue({
+        accessToken: 'fixture-account-a',
+        expiresAt: Date.now() / 1000 + 120,
+      }),
+      revokeRefreshToken: jest.fn(),
+      clearCredentials: jest.fn().mockResolvedValue(undefined),
+      clearSession: jest.fn(),
+    };
+    const manager = new SessionManager(
+      () => provider,
+      async () => {},
+    );
+    await manager.start();
+    const guard = jest.spyOn(manager, 'assertRequestGeneration');
+    return { manager, provider, guard };
+  }
+
+  const successes = [
+    { method: 'GET', status: 200, body: '{"account":"fixture-account-a"}' },
+    { method: 'POST', status: 201, body: '{"created":true}' },
+    { method: 'PUT', status: 200, body: '{"updated":true}' },
+    { method: 'PATCH', status: 200, body: '{"updated":true}' },
+    { method: 'DELETE', status: 204, body: '' },
+  ] as const;
+
+  describe.each(['headers', 'body'] as const)('while awaiting %s', (stage) => {
+    it.each(successes)(
+      'rejects stale protected $method $status without replay or extra vault reads',
+      async ({ method, status, body: payload }) => {
+        const { manager, provider, guard } = await setup();
+        const headers = deferred<Response>();
+        const body = deferred<string>();
+        const fetchStarted = deferred<void>();
+        const bodyStarted = deferred<void>();
+        const delayedResponse = {
+          ...response(status, ''),
+          text: () => {
+            bodyStarted.resolve();
+            return body.promise;
+          },
+        } as Response;
+        const fetchImplementation = jest.fn<
+          ReturnType<typeof fetch>,
+          Parameters<typeof fetch>
+        >(() => {
+          fetchStarted.resolve();
+          return headers.promise;
+        });
+        const client = createApiClient({
+          baseUrl: 'https://api.example.test',
+          authSession: manager,
+          fetchImplementation,
+        });
+        const request = client.request('/api/pantry', {
+          auth: 'required',
+          method,
+        });
+        const rejected = expect(request).rejects.toMatchObject({
+          kind: 'auth',
+        });
+        await fetchStarted.promise;
+        expect(manager.getGeneration()).toBe(1);
+        expect(fetchImplementation.mock.calls[0][1]?.headers).toHaveProperty(
+          'Authorization',
+          'Bearer fixture-account-a',
+        );
+
+        if (stage === 'body') {
+          headers.resolve(delayedResponse);
+          await bodyStarted.promise;
+        }
+
+        await manager.logout();
+        await manager.login();
+        expect(manager.getGeneration()).toBe(3);
+        expect(manager.getSnapshot().status).toBe('authenticated');
+        headers.resolve(delayedResponse);
+        body.resolve(payload);
+
+        await rejected;
+        expect(guard).toHaveBeenCalledTimes(1);
+        expect(guard).toHaveBeenCalledWith(1);
+        expect(fetchImplementation).toHaveBeenCalledTimes(1);
+        expect(provider.getCredentials).toHaveBeenCalledTimes(2);
+        expect(provider.getCredentials).not.toHaveBeenCalledWith({
+          forceRefresh: true,
+        });
+      },
+    );
+  });
+
+  it('keeps a delayed public success independent from session changes', async () => {
+    const { manager, provider, guard } = await setup();
+    const credentials = jest.spyOn(manager, 'getRequestCredentials');
+    const recovery = jest.spyOn(manager, 'recoverRequestCredentials');
+    const body = deferred<string>();
+    const bodyStarted = deferred<void>();
+    const fetchImplementation = jest.fn<
+      ReturnType<typeof fetch>,
+      Parameters<typeof fetch>
+    >(
+      async () =>
+        ({
+          ...response(200, ''),
+          text: () => {
+            bodyStarted.resolve();
+            return body.promise;
+          },
+        }) as Response,
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      authSession: manager,
+      fetchImplementation,
+    });
+    const request = client.request('/health', { auth: 'public' });
+    await bodyStarted.promise;
+    await manager.logout();
+    await manager.login();
+    body.resolve('{"healthy":true}');
+
+    await expect(request).resolves.toEqual({ healthy: true });
+    expect(manager.getGeneration()).toBe(3);
+    expect(guard).not.toHaveBeenCalled();
+    expect(credentials).not.toHaveBeenCalled();
+    expect(recovery).not.toHaveBeenCalled();
+    expect(provider.getCredentials).toHaveBeenCalledTimes(1);
+    expect(fetchImplementation.mock.calls[0][1]?.headers).not.toHaveProperty(
+      'Authorization',
+    );
+  });
+
+  it.each(successes)(
+    'delivers same-generation protected $method $status without extra vault reads',
+    async ({ method, status, body }) => {
+      const { manager, provider, guard } = await setup();
+      const fetchImplementation = jest
+        .fn()
+        .mockResolvedValue(response(status, body));
+      const client = createApiClient({
+        baseUrl: 'https://api.example.test',
+        authSession: manager,
+        fetchImplementation,
+      });
+
+      await expect(
+        client.request('/api/pantry', { auth: 'required', method }),
+      ).resolves.toEqual(body ? JSON.parse(body) : undefined);
+      expect(guard).toHaveBeenCalledTimes(1);
+      expect(guard).toHaveBeenCalledWith(1);
+      expect(provider.getCredentials).toHaveBeenCalledTimes(2);
+      expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('rejects a stale successful GET replay when the session changes during body reading', async () => {
+    const { manager, provider, guard } = await setup();
+    let accessToken = 'fixture-account-a';
+    provider.getCredentials.mockImplementation(async (options) => {
+      if (options?.forceRefresh) accessToken = 'fixture-refreshed';
+      return { accessToken, expiresAt: Date.now() / 1000 + 120 };
+    });
+    const body = deferred<string>();
+    const bodyStarted = deferred<void>();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValueOnce(response(401, '{}'))
+      .mockResolvedValueOnce({
+        ...response(200, ''),
+        text: () => {
+          bodyStarted.resolve();
+          return body.promise;
+        },
+      } as Response);
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      authSession: manager,
+      fetchImplementation,
+    });
+    const request = client.request('/api/pantry', { auth: 'required' });
+    const rejected = expect(request).rejects.toMatchObject({ kind: 'auth' });
+    await bodyStarted.promise;
+    await manager.logout();
+    await manager.login();
+    body.resolve('{"account":"fixture-account-a"}');
+
+    await rejected;
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(guard).toHaveBeenCalledWith(1);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(provider.getCredentials).toHaveBeenCalledTimes(4);
+    expect(
+      provider.getCredentials.mock.calls.filter(
+        ([options]) => options?.forceRefresh,
+      ),
+    ).toHaveLength(1);
+  });
+});
 describe('apiClient', () => {
   afterEach(() => {
     jest.useRealTimers();
@@ -25,18 +251,18 @@ describe('apiClient', () => {
       .mockResolvedValue(
         response(200, JSON.stringify({ healthy: true })),
       ) as jest.MockedFunction<typeof fetch>;
-    const getAccessToken = jest.fn(() => 'access-token');
+    const authSession = createAuthSession('access-token');
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken,
+      authSession,
     });
 
     await client.request('/health');
 
     const request = fetchImplementation.mock.calls[0][1];
     expect(request?.headers).not.toHaveProperty('Authorization');
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
   });
 
   it('sends a bearer token for protected requests', async () => {
@@ -48,7 +274,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => 'access-token',
+      authSession: createAuthSession('access-token'),
     });
 
     await client.request('/api/pantry', { auth: 'required' });
@@ -64,7 +290,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => null,
+      authSession: createAuthSession(''),
     });
 
     await expect(
@@ -123,11 +349,11 @@ describe('apiClient', () => {
       const fetchImplementation = jest
         .fn()
         .mockResolvedValue(response(200, '{}'));
-      const getAccessToken = jest.fn(() => 'real-token');
+      const authSession = createAuthSession('real-token');
       const client = createApiClient({
         baseUrl: 'https://api.example.test',
         fetchImplementation,
-        getAccessToken,
+        authSession,
       });
 
       await client.request('/health', {
@@ -142,7 +368,7 @@ describe('apiClient', () => {
         ),
       ).toBe(false);
       expect(headers['X-Request']).toBe('kept');
-      expect(getAccessToken).not.toHaveBeenCalled();
+      expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
     },
   );
 
@@ -153,7 +379,7 @@ describe('apiClient', () => {
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken: () => 'real-token',
+      authSession: createAuthSession('real-token'),
     });
 
     await client.request('/api/pantry', {
@@ -176,11 +402,11 @@ describe('apiClient', () => {
     const controller = new AbortController();
     controller.abort();
     const fetchImplementation = jest.fn();
-    const getAccessToken = jest.fn(() => 'real-token');
+    const authSession = createAuthSession('real-token');
     const client = createApiClient({
       baseUrl: 'https://api.example.test',
       fetchImplementation,
-      getAccessToken,
+      authSession,
     });
 
     await expect(
@@ -189,7 +415,7 @@ describe('apiClient', () => {
         signal: controller.signal,
       }),
     ).rejects.toMatchObject({ kind: 'cancelled' });
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
@@ -381,3 +607,173 @@ function pendingUntilAbort<T>(signal: AbortSignal): Promise<T> {
     }
   });
 }
+
+describe('session-aware 401 recovery', () => {
+  function session() {
+    return {
+      assertRequestGeneration: jest.fn(),
+      getRequestCredentials: jest.fn().mockResolvedValue({
+        accessToken: 'old-token',
+        generation: 7,
+      }),
+      recoverRequestCredentials: jest.fn().mockResolvedValue({
+        accessToken: 'new-token',
+        generation: 7,
+      }),
+    };
+  }
+
+  it('recovers a protected GET once after a 401 and replays with the new token', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValueOnce(response(401, '{"title":"Unauthorized"}'))
+      .mockResolvedValueOnce(response(200, '{"value":42}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request<{ value: number }>('/api/pantry', {
+        auth: 'required',
+      }),
+    ).resolves.toEqual({ value: 42 });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation.mock.calls[0][1]?.headers).toHaveProperty(
+      'Authorization',
+      'Bearer old-token',
+    );
+    expect(fetchImplementation.mock.calls[1][1]?.headers).toHaveProperty(
+      'Authorization',
+      'Bearer new-token',
+    );
+
+    expect(authSession.recoverRequestCredentials).toHaveBeenCalledTimes(1);
+    expect(
+      authSession.recoverRequestCredentials.mock.calls[0].slice(0, 2),
+    ).toEqual([7, 'old-token']);
+  });
+
+  it('stops after the single replay when the replay also returns 401', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValueOnce(response(401, '{}'))
+      .mockResolvedValueOnce(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(authSession.recoverRequestCredentials).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh or replay a protected 403', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(403, '{"title":"Forbidden"}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({
+      kind: 'http',
+      status: 403,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+  });
+
+  it('does not automatically replay a protected mutation after 401', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry/consume', {
+        method: 'POST',
+        auth: 'required',
+        body: { recipeId: 'fixture' },
+      }),
+    ).rejects.toMatchObject({
+      kind: 'auth',
+      status: 401,
+    });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recovered credential from another session generation without replaying', async () => {
+    const authSession = session();
+    authSession.recoverRequestCredentials.mockResolvedValue({
+      accessToken: 'new-account-token',
+      generation: 8,
+    });
+
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(
+      client.request('/api/pantry', { auth: 'required' }),
+    ).rejects.toMatchObject({ kind: 'auth' });
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  it('never invokes the auth session for a public request', async () => {
+    const authSession = session();
+    const fetchImplementation = jest
+      .fn()
+      .mockResolvedValue(response(401, '{"title":"Unauthorized"}'));
+
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      fetchImplementation,
+      authSession,
+    });
+
+    await expect(client.request('/health')).rejects.toMatchObject({
+      status: 401,
+    });
+
+    expect(authSession.getRequestCredentials).not.toHaveBeenCalled();
+    expect(authSession.recoverRequestCredentials).not.toHaveBeenCalled();
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+});

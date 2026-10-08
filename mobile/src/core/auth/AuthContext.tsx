@@ -1,93 +1,45 @@
-import { useQueryClient } from '@tanstack/react-query';
 import {
   createContext,
   PropsWithChildren,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
 } from 'react';
 
-import {
-  AuthSessionState,
-  AuthStatus,
-  initialAuthSessionState,
-} from '@/core/auth/authSession';
-import {
-  secureSessionStore,
-  SecureSessionStore,
-} from '@/core/storage/secureSessionStore';
+import type { AuthSessionState } from './authSession';
+import { SessionManager } from './sessionManager';
 
-interface AuthContextValue {
-  status: AuthStatus;
-  getAccessToken(): string | null;
-  completeAuthentication(accessToken: string): void;
+interface AuthContextValue extends AuthSessionState {
+  login(): Promise<void>;
   logout(): Promise<void>;
-}
-
-interface AuthProviderProps extends PropsWithChildren {
-  credentialStore?: SecureSessionStore;
+  retryRestore(): Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({
   children,
-  credentialStore = secureSessionStore,
-}: AuthProviderProps) {
-  const queryClient = useQueryClient();
-  const [session, setSession] = useState<AuthSessionState>(
-    initialAuthSessionState,
+  manager,
+}: PropsWithChildren<{ manager: SessionManager }>) {
+  const session = useSyncExternalStore(
+    manager.subscribe,
+    manager.getSnapshot,
+    manager.getSnapshot,
   );
 
   useEffect(() => {
-    let isActive = true;
+    void manager.start();
+  }, [manager]);
 
-    async function bootstrap() {
-      try {
-        await credentialStore.read();
-      } catch {
-        // Storage failure must not create an authenticated session.
-      } finally {
-        if (isActive) {
-          setSession({ status: 'unauthenticated', accessToken: null });
-        }
-      }
-    }
-
-    void bootstrap();
-
-    return () => {
-      isActive = false;
-    };
-  }, [credentialStore]);
-
-  const getAccessToken = useCallback(() => session.accessToken, [session]);
-
-  const completeAuthentication = useCallback((accessToken: string) => {
-    if (!accessToken) {
-      throw new TypeError('Access token must not be empty.');
-    }
-
-    setSession({ status: 'authenticated', accessToken });
-  }, []);
-
-  const logout = useCallback(async () => {
-    setSession({ status: 'unauthenticated', accessToken: null });
-    queryClient.clear();
-
-    await credentialStore.delete();
-  }, [credentialStore, queryClient]);
-
-  const value = useMemo<AuthContextValue>(
+  const value = useMemo(
     () => ({
-      status: session.status,
-      getAccessToken,
-      completeAuthentication,
-      logout,
+      ...session,
+      login: manager.login,
+      logout: manager.logout,
+      retryRestore: manager.retryRestore,
     }),
-    [completeAuthentication, getAccessToken, logout, session.status],
+    [manager, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
